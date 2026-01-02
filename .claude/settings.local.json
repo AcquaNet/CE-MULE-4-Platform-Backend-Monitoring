@@ -158,7 +158,11 @@
       "Bash(do curl -s -w \"%{time_total}\\\\n\" -o /dev/null -u elastic:Da1EP5yfArpF4dEocvZzqJKDgKXP6c4V http://localhost:9080/elasticsearch/_cluster/health)",
       "Bash(time curl:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
