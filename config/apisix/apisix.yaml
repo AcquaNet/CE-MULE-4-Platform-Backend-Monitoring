@@ -1,0 +1,572 @@
+routes:
+  #
+  # Kibana Routes - Web UI Access
+  #
+  - uri: /kibana
+    name: kibana-root
+    desc: "Kibana root redirect"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "kibana:5601": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        uri: /
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+
+  - uri: /kibana/*
+    name: kibana-proxy
+    desc: "Kibana web UI and API proxy"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "kibana:5601": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/kibana(.*)"
+          - "$1"
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+
+  #
+  # ElasticSearch Routes - Search and Analytics API
+  #
+  - uri: /elasticsearch
+    name: elasticsearch-root
+    desc: "ElasticSearch root endpoint"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - HEAD
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "elasticsearch:9200": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        uri: /
+
+  - uri: /elasticsearch/*
+    name: elasticsearch-api
+    desc: "ElasticSearch API proxy for queries and management"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - HEAD
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "elasticsearch:9200": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/elasticsearch(.*)"
+          - "$1"
+
+  #
+  # Logstash Routes - HTTP Monitoring API
+  # Note: TCP/UDP log ingestion routed via stream_routes (see below)
+  #
+  - uri: /logstash
+    name: logstash-root
+    desc: "Logstash monitoring API root"
+    methods:
+      - GET
+    upstream_id: "2"  # References logstash-monitoring upstream
+    plugins:
+      proxy-rewrite:
+        uri: /
+
+  - uri: /logstash/*
+    name: logstash-api
+    desc: "Logstash monitoring and management API"
+    methods:
+      - GET
+      - POST
+    upstream_id: "2"  # References logstash-monitoring upstream
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/logstash(.*)"
+          - "$1"
+
+  #
+  # APM Server Routes - Application Performance Monitoring
+  # Note: Direct port 8200 also available for agent communication
+  #
+  - uri: /apm-server
+    name: apm-server-root
+    desc: "APM Server root endpoint"
+    methods:
+      - GET
+      - POST
+    upstream:
+      nodes:
+        "apm-server:8200": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        uri: /
+
+  - uri: /apm-server/*
+    name: apm-server-api
+    desc: "APM Server data ingestion and API"
+    methods:
+      - GET
+      - POST
+    upstream:
+      nodes:
+        "apm-server:8200": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/apm-server(.*)"
+          - "$1"
+
+  #
+  # Mule Platform Routes - Load Balanced Across Workers
+  #
+  - uri: /api/v1/*
+    name: mule-api-v1
+    desc: "Mule API v1 endpoints - load balanced across workers"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream_id: "1"  # References upstream definition below
+    plugins:
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+      prometheus:
+        prefer_name: true
+
+  - uri: /api/*
+    name: mule-api-all
+    desc: "Mule API all versions - load balanced across workers"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream_id: "1"  # References upstream definition below
+    plugins:
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+      prometheus:
+        prefer_name: true
+
+  #
+  # ActiveMQ Routes - Web Console Access
+  #
+  - uri: /activemq
+    name: activemq-root
+    desc: "ActiveMQ web console root redirect"
+    methods:
+      - GET
+      - POST
+    upstream:
+      nodes:
+        "ce-base-apachemq-backend:8161": 1
+      type: roundrobin
+    plugins:
+      proxy-rewrite:
+        uri: /
+
+  - uri: /activemq/*
+    name: activemq-console
+    desc: "ActiveMQ web console and admin API"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+    upstream:
+      nodes:
+        "ce-base-apachemq-backend:8161": 1
+      type: roundrobin
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/activemq(.*)"
+          - "$1"
+
+  #
+  # Prometheus Routes - Metrics and Monitoring
+  #
+  - uri: /prometheus
+    name: prometheus-root
+    desc: "Prometheus root redirect"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - HEAD
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "prometheus:9090": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        uri: /
+
+  - uri: /prometheus/*
+    name: prometheus-proxy
+    desc: "Prometheus UI and API proxy"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - HEAD
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "prometheus:9090": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/prometheus(.*)"
+          - "$1"
+
+  #
+  # Grafana Routes - Dashboards and Visualization
+  #
+  - uri: /grafana
+    name: grafana-root
+    desc: "Grafana root redirect"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "grafana:3000": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        uri: /
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+
+  - uri: /grafana/*
+    name: grafana-proxy
+    desc: "Grafana dashboards and API proxy"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "grafana:3000": 1
+      type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/grafana(.*)"
+          - "$1"
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
+
+upstreams:
+  #
+  # Mule Workers Upstream - Round Robin Load Balancing
+  #
+  - id: "1"
+    name: mule-workers
+    desc: "Mule runtime workers with health checks"
+    type: roundrobin
+    scheme: http
+    timeout:
+      connect: 60
+      send: 60
+      read: 60
+    retry_timeout: 0
+    nodes:
+      "ce-base-mule-backend-1:8081": 100   # Worker 1
+      "ce-base-mule-backend-2:8081": 100   # Worker 2
+    checks:
+      active:
+        type: http
+        http_path: /api/v1/status
+        healthy:
+          interval: 30
+          http_statuses:
+            - 200
+            - 201
+            - 204
+          successes: 2
+        unhealthy:
+          interval: 30
+          http_statuses:
+            - 429
+            - 500
+            - 502
+            - 503
+            - 504
+          http_failures: 3
+          timeouts: 3
+      passive:
+        type: http
+        healthy:
+          http_statuses:
+            - 200
+            - 201
+            - 202
+            - 204
+            - 206
+            - 301
+            - 302
+          successes: 5
+        unhealthy:
+          http_statuses:
+            - 429
+            - 500
+            - 502
+            - 503
+            - 504
+          http_failures: 5
+          timeouts: 2
+
+  #
+  # Logstash Monitoring Upstream - For HTTP API (Port 9600)
+  # Note: Supports multiple Logstash instances for future scaling
+  #
+  - id: "2"
+    name: logstash-monitoring
+    desc: "Logstash monitoring API with health checks"
+    type: roundrobin
+    scheme: http
+    timeout:
+      connect: 30
+      send: 30
+      read: 30
+    nodes:
+      "logstash:9600": 100   # Logstash instance 1
+    checks:
+      active:
+        type: http
+        http_path: /
+        healthy:
+          interval: 30
+          http_statuses:
+            - 200
+          successes: 2
+        unhealthy:
+          interval: 30
+          http_statuses:
+            - 500
+            - 502
+            - 503
+            - 504
+          http_failures: 3
+
+#
+# Stream Routes - TCP/UDP Proxying for Logstash Log Ingestion
+# ============================================================================
+# SSL Certificates - Default certificate for all hostnames
+# ============================================================================
+ssls:
+  - id: "1"
+    sni: "localhost"
+    cert: |
+      -----BEGIN CERTIFICATE-----
+      MIIE+zCCAuOgAwIBAgIUUKFKa8a8AuB2ueJytIsDlGwZ2yowDQYJKoZIhvcNAQEL
+      BQAwZzELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
+      MRUwEwYDVQQKDAxPcmdhbml6YXRpb24xCzAJBgNVBAsMAklUMRUwEwYDVQQDDAxF
+      TEstU3RhY2stQ0EwHhcNMjUxMjI5MTc0NzU2WhcNMzUxMjI3MTc0NzU2WjBhMQsw
+      CQYDVQQGEwJVUzEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxFTATBgNV
+      BAoMDE9yZ2FuaXphdGlvbjELMAkGA1UECwwCSVQxDzANBgNVBAMMBmFwaXNpeDCC
+      ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMy1VRqp8EhzOYCv7Pd4QGf8
+      JKesyVYaJ7EKothaVsrB26taeZ+pIZkVSaTMQ8spIByUqtcZrTLmQ3SaPrIPMCoF
+      TyvywlCnjZqloNS/evvKWXOWmfWGBPuk6X1ZEddTE3/2ar6c2Jk3eQ+0H4uyjbCU
+      lThQQ319WCQmlI+kV1w+WkYEcmFeM/pLQav2WMZ0ZJmjZDAYjeLgfc6d8WC1gbfP
+      g2EmR1jGlp+QOqJdxKHm+dxBsAUmvZ6ktm5B+F+rLLDpnOBZ1igJCEkbHDTbKPZR
+      M3L0O2cGZKKAMeSgmxXKV7l7+CzBcqsj6mqAznMU/Zg3vX8F6EndPC0sBUGRRNcC
+      AwEAAaOBpDCBoTALBgNVHQ8EBAMCBDAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsG
+      AQUFBwMCMDMGA1UdEQQsMCqCBmFwaXNpeIIJbG9jYWxob3N0gglsb2NhbGhvc3SH
+      BH8AAAGHBKwqABQwHQYDVR0OBBYEFNqveAse2dDveQBv3lZ8FmYMkWgmMB8GA1Ud
+      IwQYMBaAFPygvD/qRm7D5XOzJfVTQeVKUkztMA0GCSqGSIb3DQEBCwUAA4ICAQBn
+      6UDSW4JyCgmlSPomleY8igpbDAmWdFDmeJhaD9e6pXD733i+hwWi16NUpExKCRAk
+      zFrt3TsSk9+KqeWg7Xslq3KN6KQgppurYjty+3AriiIIh3Q3kwlj2DQZMkZWUEpC
+      rkAYuF05piP+HInoOfP3alHfIhobwRccu9M6e9VTpvO68/vvlgwfOcv0mS1et6/T
+      Z+tOngYNp+4v0/UWoNPRxHcyXyVJhg90zZiLTr/VL/Q8xOayKWYvz/gQNS5alerT
+      956R1ZWJQOXBeoteLeXKHmXb98SDA1aVOXkZyyvVPNGVNV0m9/dCpjrnP3P+WKMx
+      1oizCaTM4kCeZbpMrdX/B3aHi9BD80GNe8kj+cF0t/9ljxsGzGmKuRaiP9bbzTFF
+      6e//GNuzVnHXoqaUpfeXpzLsgbH7xht0VoctuuxD2emvmaKewwo3yumks3MhkPPH
+      suS2mtExtxg7Ou7EVL+7KSUrj6iBiMNTWpAvguzt7xTJ7ir8A5aC+u5GHf/ucOWp
+      mRTMj0QO2wFqTe/ZwoVwj0xC19sUw9q0GYRyEDSzHCVtiQNFbll+fh3mtGIWHXKn
+      lEAQKZzvhxwMTo/yFeLS3tmvfXloZGBVSOFoXvwwDHvGI9+b5G1nwSQ2z5IeLiYZ
+      vUGy6Gb91Rvp79EI6uEFgkE9mAxqxxPlbAyAh6EYMg==
+      -----END CERTIFICATE-----
+    key: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDMtVUaqfBIczmA
+      r+z3eEBn/CSnrMlWGiexCqLYWlbKwdurWnmfqSGZFUmkzEPLKSAclKrXGa0y5kN0
+      mj6yDzAqBU8r8sJQp42apaDUv3r7yllzlpn1hgT7pOl9WRHXUxN/9mq+nNiZN3kP
+      tB+Lso2wlJU4UEN9fVgkJpSPpFdcPlpGBHJhXjP6S0Gr9ljGdGSZo2QwGI3i4H3O
+      nfFgtYG3z4NhJkdYxpafkDqiXcSh5vncQbAFJr2epLZuQfhfqyyw6ZzgWdYoCQhJ
+      Gxw02yj2UTNy9DtnBmSigDHkoJsVyle5e/gswXKrI+pqgM5zFP2YN71/BehJ3Twt
+      LAVBkUTXAgMBAAECggEAJAjtnL56cj56SlltpNhxufxMNYn4fSQohYVCSkSIz7NV
+      aHIKQ91BcVGqf4yHiI1KPk27TxcRgoq/KBj43V5IE7WQjMN0ij8ccbMjPyAf1Y/2
+      tB64Jly7ptKOWYbi2Z0hqx5lBv3UMRBvSqDiBrTdNU7Kf7m9T6tPZzm1YB3FVRLC
+      CWOCCTaYG+yWwWOLyPw0z/1JTfQJYSI/48XxKDjWAfWCfUbdaFhmyoEF0z54y3eE
+      pwshf0wmxpwal8Ib0HvWQGx3EAeGM4OGXFfE8WbdHuI+pgeT8EWNZf1FLZZNJ3YH
+      2KwVPvwfS35T5w1g0AjSWzqX6KAL36I1vZIEjiuzVQKBgQD0z/zWvEWbusDGH5bX
+      ExNAb0Qj6KeMnnf0M+6N3nU05Wxmzycjw3AVfkABitHzk5l0ktkxl8sktz5j112B
+      XtdNBsUyeJ4iqyc2odV6SErbSWyALpJ3nSLiSoURyjMpxhey/zg2a6cTV3A081RQ
+      iEIJzpUuJWec/38WG5mGLRj7hQKBgQDWECyzc0loEoXzp5JlhKWGjbdrFEBpXrCn
+      6namOIBb2WvPt+xfdad5a8niyZWlaJxnru8qrpsBPNA41FJ7wtL98AxlEYsqX0wX
+      fVnz3pw1RX//1EJ6G84O7iaoydURDfGGO8IwTjndkNhTTDT15E7jaPPOpLkOSPTy
+      ViVk8lAnqwKBgQCkeDr4FQJ6ziuGr2BKXAFaD6ZqrXorCaezA1SoMSTzBZMfOtqj
+      t0BM4EWmA5prluTIoYOTQtRydT1QHDcwnAPvNrYy4z/yMKQmmvDttzW7PwfK0f8K
+      pyHxf3kI65wV24S+d6JPRWG4p8y1dihV9kTPi99DYlPK8QdzVdV9hDy9dQKBgQDP
+      7dgt219DezKoUW5vs+BBCelPVtWWRIceJC5qGVn9Xf1OQJ6WvycVV3E8HImCqVG7
+      mP3yHLauBg9QFFWmp8DhL0oq5laiqvyzmGxG6UYcrMy/iMOl7tpCQGxG6f5P2ZZw
+      yB1BZMrqgGbQyqZq7wD9/pVMdU7YJF/iAXHDU2gujwKBgQDJSyAQiG80DqAAYTqF
+      4iHLrZbm6SJXmgEbaEXd32z9+/75GG1gEktg0c+L1Ogcu5D8r7jr4mlRHtSoEIpC
+      brXrURcuU969ovT6e4WtXGPHrWaz2bGOH+fbbF3z+VVcIlpbWkpg6i620XFAYHRQ
+      yc0EBt5E5QVTNYJWaDlZelSGYQ==
+      -----END PRIVATE KEY-----
+    status: 1
+#END
+
+# ============================================================================
+# Stream Routes (TCP/UDP)
+# ============================================================================
+# These routes enable load balancing across multiple Logstash instances
+#
+stream_routes:
+  #
+  # Logstash TCP Input - JSON Log Ingestion (Port 5000)
+  # External: localhost:9100 -> APISIX:9100 -> logstash:5000
+  #
+  - server_addr: 172.42.0.20  # APISIX IP on ce-base-micronet
+    server_port: 9100
+    id: "1"
+    desc: "Logstash TCP log ingestion - load balanced"
+    upstream:
+      nodes:
+        "logstash:5000": 100   # Logstash instance 1
+      type: roundrobin
+
+  #
+  # Logstash Beats Input - Filebeat/Metricbeat (Port 5044)
+  # External: localhost:9144 -> APISIX:9144 -> logstash:5044
+  #
+  - server_addr: 172.42.0.20  # APISIX IP on ce-base-micronet
+    server_port: 9144
+    id: "2"
+    desc: "Logstash Beats input - load balanced"
+    upstream:
+      nodes:
+        "logstash:5044": 100   # Logstash instance 1
+      type: roundrobin
+
+#END

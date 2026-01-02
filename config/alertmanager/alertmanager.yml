@@ -1,0 +1,35 @@
+# Alertmanager Configuration (Default - Disabled State)
+# This is the default configuration when ALERTING_ENABLED=false
+# Alerts are received but not sent to any external notification channels
+#
+# To enable alerting:
+# 1. Set ALERTING_ENABLED=true in .env
+# 2. Configure notification channels (email, Slack, PagerDuty, webhook)
+# 3. Run: ./scripts/setup-monitoring.sh
+#
+# This file will be automatically regenerated based on .env settings
+
+global:
+  resolve_timeout: 5m
+
+# Route configuration
+route:
+  receiver: 'null-receiver'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+# Receivers
+receivers:
+  # Null receiver - alerts are logged but not sent anywhere
+  - name: 'null-receiver'
+
+# Inhibition rules
+inhibit_rules:
+  # Inhibit warning if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']

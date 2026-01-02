@@ -1,0 +1,121 @@
+# Alertmanager Configuration Template
+# This file is processed by setup-monitoring.sh to inject environment variables
+#
+# Environment variables used:
+# - ALERT_GROUP_BY: Labels to group alerts by
+# - ALERT_GROUP_WAIT: Wait time before sending initial notification
+# - ALERT_GROUP_INTERVAL: Wait time between notifications for new alerts in group
+# - ALERT_REPEAT_INTERVAL: Time between repeat notifications
+# - ALERT_EMAIL_ENABLED: Enable email notifications
+# - ALERT_SLACK_ENABLED: Enable Slack notifications
+# - ALERT_PAGERDUTY_ENABLED: Enable PagerDuty integration
+# - ALERT_WEBHOOK_ENABLED: Enable webhook notifications
+
+global:
+  # Global SMTP configuration
+  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
+  smtp_from: '${SMTP_FROM_ADDRESS}'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: ${SMTP_USE_TLS}
+
+  # Default URLs
+  http_config:
+    proxy_url: ''
+
+  # Slack API URL (global)
+  slack_api_url: 'https://hooks.slack.com/services'
+
+  # PagerDuty API URL
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Inhibition rules (prevent duplicate alerts)
+inhibit_rules:
+  # Inhibit warning if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+  # Inhibit info if warning is firing
+  - source_match:
+      severity: 'warning'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'cluster', 'service']
+
+# Route tree for alert routing
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+
+  # Grouping configuration
+  group_by: ${ALERT_GROUP_BY_ARRAY}
+  group_wait: ${ALERT_GROUP_WAIT}
+  group_interval: ${ALERT_GROUP_INTERVAL}
+  repeat_interval: ${ALERT_REPEAT_INTERVAL}
+
+  # Child routes for specific alert types
+  routes:
+    # Critical alerts - send to all enabled channels immediately
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: false
+
+    # Warning alerts - less urgent
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 4h
+      continue: false
+
+    # Info alerts - informational only
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      group_wait: 5m
+      repeat_interval: 24h
+      continue: false
+
+    # Backup-specific alerts
+    - match:
+        component: backup
+      receiver: 'backup-alerts'
+      group_wait: 30s
+      repeat_interval: 12h
+      continue: false
+
+# Receivers - notification endpoints
+receivers:
+  # Default receiver (catches all unmatched alerts)
+  - name: 'default-receiver'
+    # EMAIL_RECEIVER_SECTION
+
+  # Critical alerts receiver
+  - name: 'critical-alerts'
+    # EMAIL_CRITICAL_SECTION
+    # SLACK_CRITICAL_SECTION
+    # PAGERDUTY_CRITICAL_SECTION
+    # WEBHOOK_CRITICAL_SECTION
+
+  # Warning alerts receiver
+  - name: 'warning-alerts'
+    # EMAIL_WARNING_SECTION
+    # SLACK_WARNING_SECTION
+    # WEBHOOK_WARNING_SECTION
+
+  # Info alerts receiver
+  - name: 'info-alerts'
+    # SLACK_INFO_SECTION
+    # WEBHOOK_INFO_SECTION
+
+  # Backup alerts receiver
+  - name: 'backup-alerts'
+    # EMAIL_BACKUP_SECTION
+    # SLACK_BACKUP_SECTION
+    # WEBHOOK_BACKUP_SECTION

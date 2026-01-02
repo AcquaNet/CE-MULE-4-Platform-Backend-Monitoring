@@ -1,0 +1,133 @@
+# Docker Compose SSL/TLS Override
+#
+# This file enables SSL/TLS termination at the APISIX gateway.
+# Internal services communicate over HTTP on the trusted Docker network.
+#
+# Use it in combination with the base docker-compose.yml:
+#
+#   docker-compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+#
+# Prerequisites:
+#   1. Generate certificates: ./config/scripts/setup/generate-certs.sh
+#   2. Enable SSL in .env: SSL_ENABLED=true
+#   3. Verify certs/ directory has apisix/ and apm-server/ certificates
+#
+# For production with Let's Encrypt:
+#   ./config/scripts/setup/setup-letsencrypt.sh --domain yourdomain.com --email your@email.com
+#
+# SSL Architecture:
+#   - APISIX Gateway: Terminates SSL for all external HTTP/HTTPS traffic
+#   - APM Server: SSL for direct connections from CloudHub/external apps
+#   - Internal Services: HTTP only (ElasticSearch, Kibana, Logstash, Prometheus, Grafana)
+#
+# End-to-End Encryption (Optional):
+#   If compliance requires encryption for internal services, certificates are available
+#   in certs/extra/. See docs/SSL_TLS_SETUP.md for configuration details.
+#
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Internal services use HTTP - SSL terminated at APISIX gateway
+  # ============================================================================
+  #
+  # ElasticSearch, Kibana, Logstash, Prometheus, Grafana, and Alertmanager
+  # communicate over HTTP on the internal Docker network (ce-base-micronet).
+  # All external access is through APISIX gateway which handles SSL/TLS.
+  #
+  # For end-to-end encryption (if required by compliance):
+  #   - Certificates available in certs/extra/
+  #   - See docs/SSL_TLS_SETUP.md for configuration details
+  #   - Uncomment and configure the sections at the end of this file
+
+  # ============================================================================
+  # APISIX with SSL/TLS (Main Gateway)
+  # ============================================================================
+  apisix:
+    environment:
+      - APISIX_SSL_ENABLED=${APISIX_SSL_ENABLED:-true}
+
+    volumes:
+      - ./certs/apisix:/usr/local/apisix/conf/cert:ro
+      - ./certs/ca:/usr/local/apisix/conf/ca:ro
+      - ./config/apisix/config/config-ssl.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./config/scripts/setup/apisix-ssl-patch.sh:/docker-entrypoint.d/apisix-ssl-patch.sh:ro
+
+    ports:
+      # HTTPS port (production access)
+      - "9443:9443"
+
+    healthcheck:
+      test: ["CMD-SHELL", "sh /docker-entrypoint.d/apisix-ssl-patch.sh && curl -f http://localhost:9080/apisix/status || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # Note: APISIX SSL config (config-ssl.yaml) should:
+    # - Enable SSL listener on port 9443
+    # - Configure SSL certificates
+    # - SSL patch script applies nginx.conf fix on each healthcheck
+    # - Optionally redirect HTTP -> HTTPS
+
+  # ============================================================================
+  # APM Server with SSL/TLS
+  # ============================================================================
+  # APM Server needs SSL because port 8200 is directly exposed for CloudHub apps
+  apm-server:
+    command: >
+      apm-server -e
+        -E apm-server.host=0.0.0.0:8200
+        -E apm-server.ssl.enabled=true
+        -E apm-server.ssl.certificate=/usr/share/apm-server/config/certs/apm-server.crt
+        -E apm-server.ssl.key=/usr/share/apm-server/config/certs/apm-server.key
+        -E output.elasticsearch.hosts=['http://elasticsearch:9200']
+        -E output.elasticsearch.username=elastic
+        -E output.elasticsearch.password=${ELASTIC_PASSWORD}
+        -E output.elasticsearch.protocol=http
+        -E apm-server.kibana.enabled=true
+        -E apm-server.kibana.host=http://kibana:5601
+        -E apm-server.kibana.username=elastic
+        -E apm-server.kibana.password=${ELASTIC_PASSWORD}
+        -E apm-server.auth.anonymous.enabled=false
+        -E apm-server.auth.secret_token=${APM_SECRET_TOKEN}
+        -E apm-server.rum.enabled=false
+
+    volumes:
+      - ./certs/apm-server:/usr/share/apm-server/config/certs:ro
+
+    ports:
+      - "8200:8200"      # HTTPS endpoint for external APM agents
+
+  # ============================================================================
+  # End-to-End Encryption (Optional - For Compliance Requirements)
+  # ============================================================================
+  #
+  # The sections below are commented out because SSL termination at APISIX
+  # gateway is sufficient for most deployments.
+  #
+  # If your compliance requirements mandate end-to-end encryption for internal
+  # services, certificates are available in certs/extra/:
+  #   - elasticsearch/
+  #   - kibana/
+  #   - logstash/
+  #   - prometheus/
+  #   - grafana/
+  #   - alertmanager/
+  #
+  # To enable end-to-end encryption:
+  #   1. Move certificates from certs/extra/ to certs/
+  #   2. Uncomment and configure the service sections in this file
+  #   3. See docs/SSL_TLS_SETUP.md for detailed configuration
+  #
+  # Example use cases requiring end-to-end encryption:
+  #   - HIPAA compliance (healthcare data)
+  #   - PCI-DSS compliance (payment card data)
+  #   - Government/military deployments
+  #   - Zero-trust network architecture
+  #
+  # ============================================================================
+
+# For detailed end-to-end encryption configuration, see:
+# docs/SSL_TLS_SETUP.md

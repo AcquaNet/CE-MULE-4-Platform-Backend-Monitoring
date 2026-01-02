@@ -1,0 +1,297 @@
+# Prometheus Alert Rules for ELK Stack
+# This file defines alert conditions for monitoring the ElasticSearch, Logstash, Kibana stack
+#
+# Alert severity levels:
+# - critical: Immediate action required, service outage or data loss
+# - warning: Attention needed, potential issues
+# - info: Informational, for awareness
+
+groups:
+  # ElasticSearch Cluster Health Alerts
+  - name: elasticsearch_cluster
+    interval: 60s
+    rules:
+      - alert: ElasticSearchClusterDown
+        expr: up{job="elasticsearch-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: elasticsearch
+          component: cluster
+        annotations:
+          summary: "ElasticSearch cluster is down"
+          description: "ElasticSearch cluster has been down for more than 5 minutes. Cluster: {{ $labels.cluster }}"
+          dashboard_url: "http://localhost:9080/grafana/d/elasticsearch/elasticsearch-overview"
+          kibana_url: "http://localhost:9080/kibana"
+
+      - alert: ElasticSearchClusterHealthYellow
+        expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: cluster
+        annotations:
+          summary: "ElasticSearch cluster health is YELLOW"
+          description: "ElasticSearch cluster {{ $labels.cluster }} has been in YELLOW state for more than 10 minutes. Some replicas are not allocated."
+          dashboard_url: "http://localhost:9080/grafana/d/elasticsearch/elasticsearch-overview"
+
+      - alert: ElasticSearchClusterHealthRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: elasticsearch
+          component: cluster
+        annotations:
+          summary: "ElasticSearch cluster health is RED"
+          description: "ElasticSearch cluster {{ $labels.cluster }} is in RED state. Data loss may have occurred!"
+          dashboard_url: "http://localhost:9080/grafana/d/elasticsearch/elasticsearch-overview"
+
+      - alert: ElasticSearchNodesCountChanged
+        expr: changes(elasticsearch_cluster_health_number_of_nodes[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: cluster
+        annotations:
+          summary: "ElasticSearch cluster node count changed"
+          description: "The number of nodes in cluster {{ $labels.cluster }} has changed. Current: {{ $value }}"
+
+  # ElasticSearch Resource Alerts
+  - name: elasticsearch_resources
+    interval: 60s
+    rules:
+      - alert: ElasticSearchDiskSpaceHigh
+        expr: (elasticsearch_filesystem_data_available_bytes / elasticsearch_filesystem_data_size_bytes * 100) < 15
+        for: 5m
+        labels:
+          severity: critical
+          service: elasticsearch
+          component: storage
+        annotations:
+          summary: "ElasticSearch disk space critically low"
+          description: "ElasticSearch node {{ $labels.node }} has less than 15% disk space available. Current: {{ $value | humanizePercentage }}"
+
+      - alert: ElasticSearchDiskSpaceWarning
+        expr: (elasticsearch_filesystem_data_available_bytes / elasticsearch_filesystem_data_size_bytes * 100) < 30
+        for: 10m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: storage
+        annotations:
+          summary: "ElasticSearch disk space running low"
+          description: "ElasticSearch node {{ $labels.node }} has less than 30% disk space available. Current: {{ $value | humanizePercentage }}"
+
+      - alert: ElasticSearchJVMHeapUsageHigh
+        expr: (elasticsearch_jvm_memory_used_bytes{area="heap"} / elasticsearch_jvm_memory_max_bytes{area="heap"} * 100) > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: elasticsearch
+          component: jvm
+        annotations:
+          summary: "ElasticSearch JVM heap usage critically high"
+          description: "ElasticSearch node {{ $labels.node }} JVM heap usage is above 90%. Current: {{ $value | humanizePercentage }}"
+
+      - alert: ElasticSearchJVMHeapUsageWarning
+        expr: (elasticsearch_jvm_memory_used_bytes{area="heap"} / elasticsearch_jvm_memory_max_bytes{area="heap"} * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: jvm
+        annotations:
+          summary: "ElasticSearch JVM heap usage high"
+          description: "ElasticSearch node {{ $labels.node }} JVM heap usage is above 85%. Current: {{ $value | humanizePercentage }}"
+
+      - alert: ElasticSearchGarbageCollectionDuration
+        expr: rate(elasticsearch_jvm_gc_collection_seconds_sum[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: jvm
+        annotations:
+          summary: "ElasticSearch GC taking too long"
+          description: "ElasticSearch node {{ $labels.node }} is spending {{ $value | humanizePercentage }} of time in GC"
+
+  # ElasticSearch Index Alerts
+  - name: elasticsearch_indices
+    interval: 300s
+    rules:
+      - alert: ElasticSearchUnassignedShards
+        expr: elasticsearch_cluster_health_unassigned_shards > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: indices
+        annotations:
+          summary: "ElasticSearch has unassigned shards"
+          description: "Cluster {{ $labels.cluster }} has {{ $value }} unassigned shards. Check cluster health."
+
+      - alert: ElasticSearchRelocatingShards
+        expr: elasticsearch_cluster_health_relocating_shards > 0
+        for: 30m
+        labels:
+          severity: info
+          service: elasticsearch
+          component: indices
+        annotations:
+          summary: "ElasticSearch is relocating shards"
+          description: "Cluster {{ $labels.cluster }} has been relocating {{ $value }} shards for more than 30 minutes."
+
+      - alert: ElasticSearchInitializingShards
+        expr: elasticsearch_cluster_health_initializing_shards > 0
+        for: 30m
+        labels:
+          severity: info
+          service: elasticsearch
+          component: indices
+        annotations:
+          summary: "ElasticSearch is initializing shards"
+          description: "Cluster {{ $labels.cluster }} has been initializing {{ $value }} shards for more than 30 minutes."
+
+  # APISIX Gateway Alerts
+  - name: apisix_gateway
+    interval: 60s
+    rules:
+      - alert: APISIXDown
+        expr: up{job="apisix"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX API Gateway is down"
+          description: "APISIX gateway has been down for more than 1 minute. All API traffic is affected."
+
+      - alert: APISIXHighLatency
+        expr: histogram_quantile(0.95, rate(apisix_http_latency_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX request latency high"
+          description: "95th percentile latency is {{ $value }}ms (threshold: 1000ms)"
+
+      - alert: APISIXHighErrorRate
+        expr: rate(apisix_http_status{code=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX 5xx error rate high"
+          description: "Error rate is {{ $value | humanizePercentage }} for route {{ $labels.route }}"
+
+  # Logstash Alerts
+  - name: logstash_pipeline
+    interval: 60s
+    rules:
+      - alert: LogstashDown
+        expr: up{job="logstash"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: logstash
+          component: pipeline
+        annotations:
+          summary: "Logstash is down"
+          description: "Logstash has been down for more than 5 minutes. Log ingestion is stopped."
+
+      - alert: LogstashPipelineFailures
+        expr: rate(logstash_pipeline_events_out{pipeline="main"}[5m]) == 0 and rate(logstash_pipeline_events_in{pipeline="main"}[5m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+          service: logstash
+          component: pipeline
+        annotations:
+          summary: "Logstash pipeline not processing events"
+          description: "Logstash is receiving events but not outputting any. Check pipeline configuration."
+
+  # Kibana Alerts
+  - name: kibana_service
+    interval: 60s
+    rules:
+      - alert: KibanaDown
+        expr: up{job="kibana"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kibana
+          component: ui
+        annotations:
+          summary: "Kibana is down"
+          description: "Kibana has been down for more than 5 minutes. Dashboard access is unavailable."
+
+  # Prometheus & Grafana Alerts
+  - name: monitoring_stack
+    interval: 60s
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: prometheus
+          component: monitoring
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus has been down for more than 5 minutes. Monitoring is unavailable."
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: grafana
+          component: visualization
+        annotations:
+          summary: "Grafana is down"
+          description: "Grafana has been down for more than 5 minutes. Dashboards are unavailable."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: alertmanager
+          component: alerting
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager has been down for more than 5 minutes. Alert notifications are not being sent!"
+
+  # Backup Alerts
+  - name: backup_monitoring
+    interval: 3600s  # Check hourly
+    rules:
+      - alert: ElasticSearchBackupFailed
+        expr: elasticsearch_snapshot_stats_snapshot_failed_shards_total > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: elasticsearch
+          component: backup
+        annotations:
+          summary: "ElasticSearch snapshot failed"
+          description: "Snapshot {{ $labels.snapshot }} in repository {{ $labels.repository }} has {{ $value }} failed shards."
+
+      - alert: ElasticSearchNoRecentBackup
+        expr: time() - elasticsearch_snapshot_stats_snapshot_end_time_seconds > 86400
+        for: 1h
+        labels:
+          severity: warning
+          service: elasticsearch
+          component: backup
+        annotations:
+          summary: "No recent ElasticSearch backup"
+          description: "Last successful backup was {{ $value | humanizeDuration }} ago. Check backup cron job."

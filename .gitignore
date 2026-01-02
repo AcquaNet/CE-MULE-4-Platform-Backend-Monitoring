@@ -1,0 +1,204 @@
+# ====================================================================
+# Environment and Secrets
+# ====================================================================
+
+# Environment files with sensitive credentials
+.env
+.env.local
+.env.*.local
+
+# Backup copies of environment files
+.env.backup
+*.env.bak
+
+# ====================================================================
+# Security and Certificates
+# ====================================================================
+
+# SSL/TLS certificates and keys
+certs/
+*.key
+*.crt
+*.csr
+*.pem
+*.p12
+*.jks
+*.pfx
+
+# Let's Encrypt files
+letsencrypt/
+.well-known/
+
+# SSH keys
+*.key
+*.pub
+id_rsa*
+
+# ====================================================================
+# Docker and Volumes
+# ====================================================================
+
+# Docker volumes
+volumes/
+
+# Docker data directories
+data/
+elasticsearch-data/
+prometheus-data/
+grafana-data/
+alertmanager-data/
+
+# ====================================================================
+# Logs
+# ====================================================================
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# APISIX logs
+apisix-logs/
+
+# ====================================================================
+# Backups and Snapshots
+# ====================================================================
+
+# ElasticSearch snapshots
+backups/
+snapshots/
+*.snapshot
+
+# Database dumps
+*.dump
+*.sql
+*.sql.gz
+
+# Tar archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# ====================================================================
+# Temporary Files
+# ====================================================================
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.~lock.*
+
+# PID files
+*.pid
+
+# Cache directories
+.cache/
+__pycache__/
+*.pyc
+
+# ====================================================================
+# OS-Specific Files
+# ====================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ====================================================================
+# IDE and Editor Files
+# ====================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ====================================================================
+# Build Artifacts
+# ====================================================================
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Gradle
+.gradle/
+build/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# ====================================================================
+# Configuration Backups
+# ====================================================================
+
+# Configuration backups
+*.conf.bak
+*.yaml.bak
+*.yml.bak
+*.json.bak
+
+# ====================================================================
+# Project-Specific Exclusions
+# ====================================================================
+
+# Mule application source code (separate repository)
+git/
+
+# SOTA offline installers (large files, separate distribution)
+CE-Platform/
+
+# ====================================================================
+# Notes
+# ====================================================================
+# This .gitignore protects sensitive data from being committed:
+# - Credentials in .env files
+# - SSL certificates and private keys
+# - Backup files and snapshots
+# - Log files with potentially sensitive data
+# - Temporary files and build artifacts
+#
+# IMPORTANT: Never force-add files that match these patterns!
+# ====================================================================

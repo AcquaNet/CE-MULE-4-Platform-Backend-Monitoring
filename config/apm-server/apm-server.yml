@@ -1,0 +1,68 @@
+# APM Server Configuration for Mule 4 Platform
+# Version: 8.10.4 (compatible with elastic-apm-agent 1.17.0)
+#
+# This configuration file can be used as an alternative to command-line options
+# To use this file, update docker-compose.yml to mount this file:
+#   volumes:
+#     - ./config/apm-server/apm-server.yml:/usr/share/apm-server/apm-server.yml:ro
+
+apm-server:
+  # Host and port for APM Server to listen on
+  host: "0.0.0.0:8200"
+
+  # Kibana integration for APM UI
+  kibana:
+    enabled: true
+    host: "http://kibana:5601"
+
+  # Authentication settings
+  # Anonymous access enabled for development (disable in production)
+  auth:
+    anonymous:
+      enabled: true
+      allow_agent: ["rum-js", "js-base", "iOS/swift"]
+      allow_service: null  # Allow all services
+      rate_limit:
+        event_limit: 300
+        ip_limit: 1000
+
+  # RUM (Real User Monitoring) - disabled for backend-only monitoring
+  rum:
+    enabled: false
+
+# Output configuration - send to ElasticSearch
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  protocol: "http"
+
+  # Index lifecycle management
+  indices:
+    - index: "apm-%{[observer.version]}-sourcemap"
+      when.contains:
+        processor.event: "sourcemap"
+    - index: "apm-%{[observer.version]}-error-%{+yyyy.MM.dd}"
+      when.contains:
+        processor.event: "error"
+    - index: "apm-%{[observer.version]}-transaction-%{+yyyy.MM.dd}"
+      when.contains:
+        processor.event: "transaction"
+    - index: "apm-%{[observer.version]}-span-%{+yyyy.MM.dd}"
+      when.contains:
+        processor.event: "span"
+    - index: "apm-%{[observer.version]}-metric-%{+yyyy.MM.dd}"
+      when.contains:
+        processor.event: "metric"
+    - index: "apm-%{[observer.version]}-onboarding-%{+yyyy.MM.dd}"
+      when.contains:
+        processor.event: "onboarding"
+
+# Logging configuration
+logging:
+  level: info
+  to_stderr: true
+  to_syslog: false
+  to_files: false
+
+# Instrumentation configuration
+instrumentation:
+  enabled: false  # Don't instrument the APM server itself
