@@ -80,6 +80,10 @@ snapshots/
 *.tgz
 *.zip
 
+# Docker image exports (large files)
+**/docker-images-export/
+docker-images-export/
+
 # ====================================================================
 # Temporary Files
 # ====================================================================

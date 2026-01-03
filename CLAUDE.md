@@ -39,7 +39,8 @@ Docker ElasticSearch/
 │   ├── BACKUP_SETUP.md             # Complete backup and restore guide
 │   ├── RETENTION_POLICY_GUIDE.md   # Log retention policy configuration
 │   ├── MONITORING_SETUP.md         # Monitoring and alerting guide
-│   └── ARTIFACTORY_DEPLOYMENT.md   # JFrog Artifactory deployment guide
+│   ├── ARTIFACTORY_DEPLOYMENT.md   # JFrog Artifactory deployment guide
+│   └── DOCKER_IMAGES_EXPORT.md     # Docker images export/import for offline deployment
 │
 ├── certs/                          # SSL/TLS certificates (git-ignored)
 │   ├── ca/                         # Certificate Authority files
@@ -104,8 +105,14 @@ Docker ElasticSearch/
 │       ├── monitoring/             # Monitoring and alerting scripts
 │       │   ├── setup-monitoring.sh
 │       │   └── check-health.sh
-│       └── ilm/                    # Index Lifecycle Management scripts
-│           └── setup-retention-policy.sh
+│       ├── ilm/                    # Index Lifecycle Management scripts
+│       │   └── setup-retention-policy.sh
+│       └── docker-images/          # Docker image export/import for offline deployment
+│           ├── export-images.sh    # Export all Docker images to tar files
+│           ├── export-images.bat   # Windows version
+│           ├── import-images.sh    # Import Docker images from tar files
+│           ├── import-images.bat   # Windows version
+│           └── README.md           # Docker images export/import guide
 │
 ├── git/                            # Application source code
 │   ├── CE-MULE-4-Platform-Backend-Mule/      # Mule 4 application source
@@ -275,7 +282,56 @@ State-of-the-art component archives for offline/air-gapped installations:
 - `mule-standalone-4.4.0.tar.gz` (184 MB)
 - `OpenJDK8U-jdk_x64_linux_hotspot_8u362b09.tar.gz` (103 MB)
 - `settings.xml`: Maven settings for artifact repository access
-- `images.zip`: Docker image exports (optional)
+- `docker-images/`: Docker image exports for offline deployment (see Docker Images Export section)
+
+### Docker Images Export/Import
+
+For offline, air-gapped, or restricted network deployments, the platform includes scripts to export and import all Docker images.
+
+**Quick Export (Machine with Internet):**
+```bash
+# Windows
+cd scripts\docker-images
+export-images.bat
+
+# Linux/Mac
+cd scripts/docker-images
+chmod +x export-images.sh
+./export-images.sh
+```
+
+**Quick Import (Target Machine):**
+```bash
+# Windows
+cd docker-images-export
+import-images.bat
+
+# Linux/Mac
+cd docker-images-export
+chmod +x import-images.sh
+./import-images.sh
+```
+
+**Images Exported:**
+- ElasticSearch, Kibana, Logstash 8.11.3
+- APM Server 8.10.4
+- Apache APISIX 3.7.0, APISIX Dashboard 3.0.1
+- etcd v3.5.9
+- Prometheus v2.48.0, Grafana 10.2.2
+- Alertmanager v0.26.0, ElasticSearch Exporter v1.6.0
+- Utility images (curl)
+
+**Total Size:** ~3-4 GB uncompressed, ~2-3 GB compressed
+
+**Use Cases:**
+- Air-gapped environments (no internet access)
+- Restricted networks (limited connectivity)
+- Offline installations
+- Backup and disaster recovery
+- Consistent deployments across environments
+- Integration with SOTA components for complete offline package
+
+For complete guide, see [DOCKER_IMAGES_EXPORT.md](docs/DOCKER_IMAGES_EXPORT.md).
 
 ## Common Commands
 
