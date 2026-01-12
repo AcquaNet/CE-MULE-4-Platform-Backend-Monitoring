@@ -1,0 +1,146 @@
+{
+  "realm": "mule",
+  "enabled": true,
+  "displayName": "Mule Platform",
+  "displayNameHtml": "<strong>Mule Platform</strong>",
+  "loginTheme": "keycloak",
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@mule.local",
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "admin"],
+      "clientRoles": {
+        "mule-api-gateway": ["api-access"]
+      }
+    },
+    {
+      "username": "developer",
+      "enabled": true,
+      "email": "developer@mule.local",
+      "firstName": "Developer",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"],
+      "clientRoles": {
+        "mule-api-gateway": ["api-access"]
+      }
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "User role"
+      },
+      {
+        "name": "admin",
+        "description": "Administrator role"
+      }
+    ],
+    "client": {
+      "mule-api-gateway": [
+        {
+          "name": "api-access",
+          "description": "API access role"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "mule-api-gateway",
+      "name": "Mule API Gateway",
+      "description": "APISIX Gateway Client for Mule APIs",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "mule-gateway-secret-12345",
+      "redirectUris": [
+        "http://localhost:9080/*",
+        "http://localhost:9443/*",
+        "http://apisix:9080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:9080",
+        "http://localhost:9443"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "client.secret.creation.time": "1735689600"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "scopeMappings": [],
+  "clientScopeMappings": {},
+  "defaultRoles": ["user"]
+}

@@ -252,7 +252,7 @@ services:
       logstash:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -e /usr/local/apisix/logs/error.log || exit 1"]
+      test: ["CMD-SHELL", "test -d /usr/local/apisix || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -441,6 +441,76 @@ services:
       retries: 3
     restart: always
 
+  #
+  # Keycloak - Identity and Access Management
+  #
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN_USER:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
+      - KC_HOSTNAME=localhost
+      - KC_HOSTNAME_PORT=9443
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HOSTNAME_ADMIN_URL=https://localhost:9443/auth
+      - KC_HTTP_ENABLED=true
+      - KC_PROXY_ADDRESS_FORWARDING=true
+      - KC_PROXY=edge
+      - KC_HEALTH_ENABLED=true
+      - KC_HTTP_RELATIVE_PATH=/auth
+    command:
+      - start-dev
+      - --import-realm
+    volumes:
+      - ./config/keycloak/realms:/opt/keycloak/data/import:ro
+      - keycloak-data:/opt/keycloak/data
+    # Keycloak accessible via APISIX at /auth
+    expose:
+      - "8080"
+    networks:
+      ce-base-micronet:
+        ipv4_address: 172.42.0.27
+      ce-base-network:
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e 'GET /health/ready HTTP/1.1\r\nhost: http://localhost\r\nConnection: close\r\n\r\n' >&3;if [ $? -eq 0 ]; then echo 'Healthcheck Successful';exit 0;else echo 'Healthcheck Failed';exit 1;fi;"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: always
+
+  #
+  # Keycloak Database - PostgreSQL
+  #
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: keycloak-db
+    environment:
+      - POSTGRES_DB=keycloak
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      ce-base-micronet:
+        ipv4_address: 172.42.0.28
+      ce-base-network:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
 volumes:
   elasticsearch-data:
     driver: local
@@ -453,6 +523,10 @@ volumes:
   grafana-data:
     driver: local
   alertmanager-data:
+    driver: local
+  keycloak-data:
+    driver: local
+  keycloak-db-data:
     driver: local
 
 networks:

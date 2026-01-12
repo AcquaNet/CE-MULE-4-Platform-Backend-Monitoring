@@ -50,7 +50,7 @@ deployment:
   admin:
     admin_key:
       - name: "admin"
-        key: ${APISIX_ADMIN_KEY}  # Loaded from environment variable
+        key: e7d80c822f21725ff1e7a8cc68f68c76ac6516bbb9e0310ed60f75e30330571c
         role: admin
 
     enable_admin_cors: true
