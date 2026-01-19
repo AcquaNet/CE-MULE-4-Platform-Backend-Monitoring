@@ -1,0 +1,116 @@
+{
+  "_comment": "ElasticSearch Role Mapping for Multi-Tenancy with Keycloak OIDC",
+  "_description": "Maps Keycloak JWT claims to ElasticSearch roles for Document-Level Security",
+
+  "tenant_user_role": {
+    "_comment": "Base role for tenant users with DLS filtering by tenant_id",
+    "cluster": ["monitor"],
+    "indices": [
+      {
+        "names": ["mule-logs-*", "logstash-*"],
+        "privileges": ["read", "view_index_metadata"],
+        "query": {
+          "template": {
+            "source": "{\"term\":{\"tenant_id\":\"{{_user.metadata.tenant_id}}\"}}"
+          }
+        }
+      }
+    ],
+    "applications": [
+      {
+        "application": "kibana-.kibana",
+        "privileges": [
+          "feature_discover.read",
+          "feature_dashboard.read",
+          "feature_visualize.read",
+          "feature_savedObjectsManagement.read"
+        ],
+        "resources": ["*"]
+      }
+    ],
+    "metadata": {
+      "description": "Tenant user role with DLS filtering",
+      "version": "1.0"
+    }
+  },
+
+  "tenant_admin_role": {
+    "_comment": "Admin role for tenant administrators (can manage dashboards)",
+    "cluster": ["monitor"],
+    "indices": [
+      {
+        "names": ["mule-logs-*", "logstash-*"],
+        "privileges": ["read", "view_index_metadata"],
+        "query": {
+          "template": {
+            "source": "{\"term\":{\"tenant_id\":\"{{_user.metadata.tenant_id}}\"}}"
+          }
+        }
+      }
+    ],
+    "applications": [
+      {
+        "application": "kibana-.kibana",
+        "privileges": [
+          "feature_discover.all",
+          "feature_dashboard.all",
+          "feature_visualize.all",
+          "feature_savedObjectsManagement.all"
+        ],
+        "resources": ["*"]
+      }
+    ],
+    "metadata": {
+      "description": "Tenant admin role with DLS filtering and dashboard management",
+      "version": "1.0"
+    }
+  },
+
+  "role_mapping_oidc_tenant": {
+    "_comment": "Maps OIDC users with tenant_id claim to tenant_user role",
+    "enabled": true,
+    "roles": ["tenant_user"],
+    "rules": {
+      "all": [
+        {
+          "field": {
+            "realm.name": "oidc1"
+          }
+        },
+        {
+          "field": {
+            "metadata.tenant_id": "*"
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "description": "Map OIDC users with tenant_id to tenant_user role",
+      "version": "1.0"
+    }
+  },
+
+  "role_mapping_oidc_admin": {
+    "_comment": "Maps OIDC admin users to tenant_admin role",
+    "enabled": true,
+    "roles": ["tenant_admin"],
+    "rules": {
+      "all": [
+        {
+          "field": {
+            "realm.name": "oidc1"
+          }
+        },
+        {
+          "field": {
+            "groups": "admin"
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "description": "Map OIDC admin users to tenant_admin role",
+      "version": "1.0"
+    }
+  }
+}

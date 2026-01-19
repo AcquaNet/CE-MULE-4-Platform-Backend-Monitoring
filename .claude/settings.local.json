@@ -181,7 +181,18 @@
       "Bash(\"/mnt/c/Program Files/Docker/Docker/resources/bin/docker\" compose exec apisix apisix reload)",
       "Bash(__NEW_LINE__ echo \"\")",
       "Bash(head -10 echo \"\" echo \"=== Testing Grafana ===\" timeout 5 curl http://localhost:9080/grafana/)",
-      "Bash(\"/mnt/c/Program Files/Docker/Docker/resources/bin/docker\" compose restart keycloak)"
+      "Bash(\"/mnt/c/Program Files/Docker/Docker/resources/bin/docker\" compose restart keycloak)",
+      "Bash(python -c \"import xml.etree.ElementTree as ET; ET.parse\\(''git/CE-MULE-4-Platform-Backend-Mule/src/main/mule/global-tenant-handler.xml''\\); print\\(''XML valid: global-tenant-handler.xml''\\)\")",
+      "Bash(python -c \"import xml.etree.ElementTree as ET; ET.parse\\(''git/CE-MULE-4-Platform-Backend-Mule/src/main/mule/ce-backend.xml''\\); print\\(''XML valid: ce-backend.xml''\\)\")",
+      "Bash(python -c \"import xml.etree.ElementTree as ET; ET.parse\\(''git/CE-MULE-4-Platform-Backend-Mule/src/main/mule/global-config.xml''\\); print\\(''XML valid: global-config.xml''\\)\")",
+      "Bash(python -c \"import xml.etree.ElementTree as ET; ET.parse\\(''git/CE-MULE-4-Platform-Backend-Mule/src/main/resources/log4j2.xml''\\); print\\(''XML valid: log4j2.xml''\\)\")",
+      "Bash(python:*)",
+      "Bash(start \"\" \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")",
+      "Bash(start \"\" \"%PROGRAMFILES%\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")",
+      "Bash(export ELASTIC_PASSWORD=\"Da1EP5yfArpF4dEocvZzqJKDgKXP6c4V\")",
+      "Bash(export ELASTICSEARCH_HOST=\"http://localhost:9080/elasticsearch\")",
+      "Bash(powershell -Command \"$client = New-Object System.Net.Sockets.TcpClient\\(''localhost'', 5000\\); $stream = $client.GetStream\\(\\); $writer = New-Object System.IO.StreamWriter\\($stream\\); $writer.WriteLine\\(''{\"\"auth_token\"\":\"\"8fcrQrMcOyWbn6nJdoFzkTpXQGyOHMJw7qcfUotk2v8=\"\",\"\"tenant_id\"\":\"\"test-tenant\"\",\"\"application\"\":\"\"test-app\"\",\"\"log_type\"\":\"\"mule\"\",\"\"environment\"\":\"\"test\"\",\"\"level\"\":\"\"INFO\"\",\"\"message\"\":\"\"Test log with tenant_id from multitenancy test\"\",\"\"loggerName\"\":\"\"com.test.multitenancy\"\",\"\"thread\"\":\"\"main\"\"}''\\); $writer.Flush\\(\\); $client.Close\\(\\); Write-Host ''Log sent successfully''\")",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

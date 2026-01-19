@@ -8,6 +8,25 @@
   "accessTokenLifespan": 3600,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
+  "groups": [
+    {
+      "name": "tenants",
+      "subGroups": [
+        {
+          "name": "tenant-default",
+          "attributes": {
+            "tenant_id": ["default"]
+          }
+        },
+        {
+          "name": "tenant-demo",
+          "attributes": {
+            "tenant_id": ["demo"]
+          }
+        }
+      ]
+    }
+  ],
   "users": [
     {
       "username": "admin",
@@ -15,6 +34,9 @@
       "email": "admin@mule.local",
       "firstName": "Admin",
       "lastName": "User",
+      "attributes": {
+        "tenant_id": ["default"]
+      },
       "credentials": [
         {
           "type": "password",
@@ -24,8 +46,10 @@
       ],
       "realmRoles": ["user", "admin"],
       "clientRoles": {
-        "mule-api-gateway": ["api-access"]
-      }
+        "mule-api-gateway": ["api-access"],
+        "kibana": ["kibana-user"]
+      },
+      "groups": ["/tenants/tenant-default"]
     },
     {
       "username": "developer",
@@ -33,6 +57,9 @@
       "email": "developer@mule.local",
       "firstName": "Developer",
       "lastName": "User",
+      "attributes": {
+        "tenant_id": ["demo"]
+      },
       "credentials": [
         {
           "type": "password",
@@ -42,8 +69,10 @@
       ],
       "realmRoles": ["user"],
       "clientRoles": {
-        "mule-api-gateway": ["api-access"]
-      }
+        "mule-api-gateway": ["api-access"],
+        "kibana": ["kibana-user"]
+      },
+      "groups": ["/tenants/tenant-demo"]
     }
   ],
   "roles": {
@@ -55,6 +84,10 @@
       {
         "name": "admin",
         "description": "Administrator role"
+      },
+      {
+        "name": "kibana-admin",
+        "description": "Kibana administrator role"
       }
     ],
     "client": {
@@ -62,6 +95,16 @@
         {
           "name": "api-access",
           "description": "API access role"
+        }
+      ],
+      "kibana": [
+        {
+          "name": "kibana-user",
+          "description": "Kibana user role for log viewing"
+        },
+        {
+          "name": "kibana-admin",
+          "description": "Kibana admin role"
         }
       ]
     }
@@ -120,6 +163,107 @@
             "id.token.claim": "true",
             "access.token.claim": "true",
             "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "kibana",
+      "name": "Kibana OIDC Client",
+      "description": "Kibana ElasticSearch OIDC Client for SSO",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KIBANA_OIDC_CLIENT_SECRET:-kibana-oidc-secret-12345}",
+      "redirectUris": [
+        "http://localhost:9080/kibana/api/security/oidc/callback",
+        "http://localhost:5601/api/security/oidc/callback",
+        "https://localhost:9443/kibana/api/security/oidc/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:9080",
+        "http://localhost:5601",
+        "https://localhost:9443"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "pkce.code.challenge.method": "S256"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
             "jsonType.label": "String"
           }
         },

@@ -31,6 +31,7 @@
                 reconnectionDelayMillis="5000">
             <JsonLayout compact="true" eventEol="true" properties="true">
                 <KeyValuePair key="auth_token" value="${env:LOGSTASH_AUTH_TOKEN:-no-token}"/>
+                <KeyValuePair key="tenant_id" value="${ctx:tenant_id:-unknown}"/>
                 <KeyValuePair key="application" value="${mule.app.name}"/>
                 <KeyValuePair key="environment" value="${mule.env}"/>
                 <KeyValuePair key="log_type" value="mule"/>

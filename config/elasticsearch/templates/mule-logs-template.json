@@ -1,0 +1,77 @@
+{
+  "index_patterns": ["mule-logs-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "index.lifecycle.name": "mule-logs-policy",
+      "index.lifecycle.rollover_alias": "mule-logs",
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.refresh_interval": "5s"
+    },
+    "mappings": {
+      "properties": {
+        "tenant_id": {
+          "type": "keyword",
+          "doc_values": true,
+          "ignore_above": 256
+        },
+        "application": {
+          "type": "keyword"
+        },
+        "environment": {
+          "type": "keyword"
+        },
+        "worker_id": {
+          "type": "keyword"
+        },
+        "log_type": {
+          "type": "keyword"
+        },
+        "level": {
+          "type": "keyword"
+        },
+        "loggerName": {
+          "type": "keyword"
+        },
+        "message": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "correlationId": {
+          "type": "keyword"
+        },
+        "thread": {
+          "type": "keyword"
+        },
+        "@timestamp": {
+          "type": "date"
+        },
+        "timestamp": {
+          "type": "date"
+        },
+        "source_host": {
+          "type": "keyword"
+        },
+        "tags": {
+          "type": "keyword"
+        },
+        "processorPath": {
+          "type": "keyword"
+        },
+        "tenant_id_original": {
+          "type": "keyword"
+        }
+      }
+    }
+  },
+  "_meta": {
+    "description": "Template for Mule application logs with multi-tenancy support",
+    "version": "1.0.0"
+  }
+}

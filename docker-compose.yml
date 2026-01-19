@@ -68,6 +68,14 @@ services:
       - xpack.fleet.enabled=true
       - SERVER_BASEPATH=/kibana
       - SERVER_REWRITEBASEPATH=false
+      # Multi-Tenancy: OIDC authentication with Keycloak (optional)
+      # Enable by setting KIBANA_OIDC_ENABLED=true in .env
+      - xpack.security.authc.providers.oidc.oidc1.enabled=${KIBANA_OIDC_ENABLED:-false}
+      - xpack.security.authc.providers.oidc.oidc1.order=0
+      - xpack.security.authc.providers.oidc.oidc1.realm=oidc1
+      - xpack.security.authc.providers.oidc.oidc1.description=Login with Keycloak
+      - xpack.security.authc.providers.basic.basic1.enabled=true
+      - xpack.security.authc.providers.basic.basic1.order=1
     # Port removed - access via APISIX gateway at /kibana
     expose:
       - "5601"
