@@ -1,34 +1,39 @@
-# Docker Compose Configuration for ELK Stack + APISIX Gateway
+# Docker Compose Configuration for OpenSearch Stack + APISIX Gateway
 #
-# This is the base configuration running with HTTP (no SSL/TLS).
+# OPENSEARCH MIGRATION - Proof of Concept
+# This configuration replaces:
+#   - ElasticSearch → OpenSearch (with FREE Document-Level Security)
+#   - Kibana → OpenSearch Dashboards
+#   - APM Server → Jaeger + Data Prepper (for OpenTelemetry traces)
+#
 # For production deployments with SSL/TLS, use the SSL override:
-#
 #   docker-compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
-#
-# Prerequisites for SSL:
-#   1. Generate certificates: ./scripts/generate-certs.sh
-#   2. OR setup Let's Encrypt: ./scripts/setup-letsencrypt.sh --domain yourdomain.com
-#   3. Enable SSL in .env: SSL_ENABLED=true
-#   4. See docs/SSL_TLS_SETUP.md for complete guide
 #
 
 version: '3.8'
 
 services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION:-8.11.3}
-    container_name: elasticsearch
+  #
+  # OpenSearch - Search and Analytics Engine (replaces ElasticSearch)
+  # Includes FREE Document-Level Security for multi-tenancy
+  #
+  opensearch:
+    image: opensearchproject/opensearch:${OPENSEARCH_VERSION:-2.11.1}
+    container_name: opensearch
     environment:
-      - node.name=${NODE_NAME:-elasticsearch}
-      - cluster.name=${ELASTIC_CLUSTER_NAME:-elk-cluster}
+      - node.name=${NODE_NAME:-opensearch}
+      - cluster.name=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
       - discovery.type=${DISCOVERY_TYPE:-single-node}
       - bootstrap.memory_lock=true
-      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms2g -Xmx2g}
-      - xpack.security.enabled=${XPACK_SECURITY_ENABLED:-true}
-      - xpack.security.enrollment.enabled=true
-      - xpack.security.http.ssl.enabled=${XPACK_SECURITY_HTTP_SSL_ENABLED:-false}
-      - xpack.security.transport.ssl.enabled=${XPACK_SECURITY_TRANSPORT_SSL_ENABLED:-false}
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
+      # Security plugin enabled by default with DLS support
+      - plugins.security.disabled=${OPENSEARCH_SECURITY_DISABLED:-false}
+      - plugins.security.ssl.transport.enabled=false
+      - plugins.security.ssl.http.enabled=false
+      - plugins.security.allow_unsafe_democertificates=true
+      - plugins.security.allow_default_init_securityindex=true
+      # Initial admin password
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
     ulimits:
       memlock:
         soft: -1
@@ -37,46 +42,38 @@ services:
         soft: 65536
         hard: 65536
     volumes:
-      - elasticsearch-data:/usr/share/elasticsearch/data
-      - elasticsearch-backups:${SNAPSHOT_REPOSITORY_PATH:-/mnt/elasticsearch-backups}
-    # Ports removed - access via APISIX gateway at /elasticsearch
-    # Internal access still available via container name
+      - opensearch-data:/usr/share/opensearch/data
+      - opensearch-backups:${SNAPSHOT_REPOSITORY_PATH:-/mnt/opensearch-backups}
+    # Ports removed - access via APISIX gateway at /opensearch
     expose:
       - "9200"
       - "9300"
+      - "9600"  # Performance Analyzer
     networks:
       ce-base-micronet:
         ipv4_address: 172.42.0.10
       ce-base-network:
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f -u admin:${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!} http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
 
-  kibana:
-    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION:-8.11.3}
-    container_name: kibana
+  #
+  # OpenSearch Dashboards - Visualization (replaces Kibana)
+  #
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-2.11.1}
+    container_name: opensearch-dashboards
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
-      - xpack.security.enabled=${XPACK_SECURITY_ENABLED:-true}
-      - xpack.encryptedSavedObjects.encryptionKey=${KIBANA_ENCRYPTION_KEY}
-      - xpack.reporting.encryptionKey=${KIBANA_REPORTING_ENCRYPTION_KEY}
-      - xpack.fleet.enabled=true
-      - SERVER_BASEPATH=/kibana
-      - SERVER_REWRITEBASEPATH=false
-      # Multi-Tenancy: OIDC authentication with Keycloak (optional)
-      # Enable by setting KIBANA_OIDC_ENABLED=true in .env
-      - xpack.security.authc.providers.oidc.oidc1.enabled=${KIBANA_OIDC_ENABLED:-false}
-      - xpack.security.authc.providers.oidc.oidc1.order=0
-      - xpack.security.authc.providers.oidc.oidc1.realm=oidc1
-      - xpack.security.authc.providers.oidc.oidc1.description=Login with Keycloak
-      - xpack.security.authc.providers.basic.basic1.enabled=true
-      - xpack.security.authc.providers.basic.basic1.order=1
-    # Port removed - access via APISIX gateway at /kibana
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - SERVER_BASEPATH=/dashboards
+      - SERVER_REWRITEBASEPATH=true
+      # Security settings
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
+      # Disable SSL for internal communication (SSL terminated at APISIX)
+      - opensearch.ssl.verificationMode=none
     expose:
       - "5601"
     networks:
@@ -84,7 +81,7 @@ services:
         ipv4_address: 172.42.0.12
       ce-base-network:
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
@@ -92,30 +89,27 @@ services:
       timeout: 10s
       retries: 5
 
+  #
+  # Logstash - Log Processing Pipeline (with OpenSearch output)
+  # Uses logstash-oss-with-opensearch-output-plugin image
+  #
   logstash:
-    image: docker.elastic.co/logstash/logstash:${ELASTIC_VERSION:-8.11.3}
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:${LOGSTASH_VERSION:-8.9.0}
     container_name: logstash
     environment:
       - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms1g -Xmx1g}
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
       - LOGSTASH_AUTH_TOKEN=${LOGSTASH_AUTH_TOKEN}
     volumes:
       - ./config/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
-      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./config/logstash/pipeline-opensearch:/usr/share/logstash/pipeline:ro
     # All Logstash access is now routed through APISIX gateway for load balancing support
     # External access via APISIX:
     #   - TCP log ingestion: localhost:9100 (APISIX) -> logstash:5000
     #   - Beats input: localhost:9144 (APISIX) -> logstash:5044
     #   - Monitoring API: http://localhost:9080/logstash (APISIX) -> logstash:9600
-    #
-    # For direct access (bypassing APISIX), uncomment these ports:
-    # ports:
-    #   - "5044:5044"      # Beats input (Filebeat, etc.)
-    #   - "5000:5000/tcp"  # TCP input for JSON logs
-    #   - "5000:5000/udp"  # UDP input for JSON logs (not routed via APISIX)
     expose:
       - "5000"           # TCP/UDP input (internal, via APISIX stream proxy)
       - "5044"           # Beats input (internal, via APISIX stream proxy)
@@ -125,7 +119,7 @@ services:
         ipv4_address: 172.42.0.11
       ce-base-network:
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9600 || exit 1"]
@@ -133,75 +127,61 @@ services:
       timeout: 10s
       retries: 5
 
-  kibana-setup:
+  opensearch-setup:
     image: curlimages/curl:latest
-    container_name: kibana-setup
+    container_name: opensearch-setup
     volumes:
-      - ./scripts/setup-kibana.sh:/setup-kibana.sh:ro
+      - ./scripts/setup-opensearch.sh:/setup-opensearch.sh:ro
     networks:
       - ce-base-micronet
       - ce-base-network
     depends_on:
-      kibana:
+      opensearch-dashboards:
         condition: service_healthy
-    command: sh /setup-kibana.sh
+    command: sh /setup-opensearch.sh
     restart: on-failure
 
   #
-  # Elastic APM Server - Application Performance Monitoring
+  # Jaeger All-in-One - Distributed Tracing (replaces APM Server)
+  # Receives traces via OTLP from OpenTelemetry Mule 4 Agent
+  # Stores traces in OpenSearch
   #
-  apm-server:
-    image: docker.elastic.co/apm/apm-server:8.10.4
-    container_name: apm-server
-    command: >
-      apm-server -e
-        -E apm-server.host=0.0.0.0:8200
-        -E output.elasticsearch.hosts=['http://elasticsearch:9200']
-        -E output.elasticsearch.username=elastic
-        -E output.elasticsearch.password=${ELASTIC_PASSWORD}
-        -E output.elasticsearch.protocol=http
-        -E apm-server.kibana.enabled=true
-        -E apm-server.kibana.host=http://kibana:5601
-        -E apm-server.kibana.username=elastic
-        -E apm-server.kibana.password=${ELASTIC_PASSWORD}
-        -E apm-server.auth.anonymous.enabled=false
-        -E apm-server.auth.secret_token=${APM_SECRET_TOKEN}
-        -E apm-server.rum.enabled=false
+  jaeger:
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.52}
+    container_name: jaeger
+    environment:
+      # OpenSearch storage backend
+      - SPAN_STORAGE_TYPE=opensearch
+      - ES_SERVER_URLS=http://opensearch:9200
+      - ES_USERNAME=admin
+      - ES_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
+      - ES_TLS_ENABLED=false
+      # OTLP receiver for OpenTelemetry traces
+      - COLLECTOR_OTLP_ENABLED=true
+      # Jaeger Query settings
+      - QUERY_BASE_PATH=/jaeger
     ports:
-      - "8200:8200"      # APM Server HTTP endpoint
+      - "16686:16686"    # Jaeger UI (also via APISIX at /jaeger)
+      - "4317:4317"      # OTLP gRPC receiver (for OTel agent)
+      - "4318:4318"      # OTLP HTTP receiver (for OTel agent)
+      - "14250:14250"    # Jaeger gRPC receiver
+    expose:
+      - "6831/udp"       # Jaeger thrift compact
+      - "6832/udp"       # Jaeger thrift binary
+      - "14268"          # Jaeger HTTP receiver
     networks:
       ce-base-micronet:
         ipv4_address: 172.42.0.13
       ce-base-network:
     depends_on:
-      elasticsearch:
-        condition: service_healthy
-      kibana:
+      opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f apm-server || exit 1"]
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:16686/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
     restart: always
-
-  apm-setup:
-    image: curlimages/curl:latest
-    container_name: apm-setup
-    volumes:
-      - ./scripts/setup-apm.sh:/setup-apm.sh:ro
-    networks:
-      - ce-base-micronet
-      - ce-base-network
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-      kibana:
-        condition: service_healthy
-      apm-server:
-        condition: service_started
-    command: sh /setup-apm.sh
-    restart: on-failure
 
   #
   # Apache APISIX - API Gateway and Load Balancer
@@ -236,7 +216,7 @@ services:
       - APISIX_ADMIN_KEY=${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
     volumes:
       - ./config/apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./config/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./config/apisix/apisix-opensearch.yaml:/usr/local/apisix/conf/apisix.yaml:ro
       - apisix-logs:/usr/local/apisix/logs
     ports:
       - "9080:9080"    # HTTP Gateway
@@ -253,11 +233,13 @@ services:
     depends_on:
       etcd:
         condition: service_healthy
-      elasticsearch:
+      opensearch:
         condition: service_healthy
-      kibana:
+      opensearch-dashboards:
         condition: service_healthy
       logstash:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "test -d /usr/local/apisix || exit 1"]
@@ -413,16 +395,17 @@ services:
     restart: always
 
   #
-  # ElasticSearch Exporter - Exports ElasticSearch metrics to Prometheus
-  # Enabled when ELASTICSEARCH_EXPORTER_ENABLED=true in .env
+  # OpenSearch Exporter - Exports OpenSearch metrics to Prometheus
+  # Enabled when OPENSEARCH_EXPORTER_ENABLED=true in .env
+  # Uses the same elasticsearch-exporter as it's compatible with OpenSearch
   #
-  elasticsearch-exporter:
+  opensearch-exporter:
     image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.6.0
-    container_name: elasticsearch-exporter
+    container_name: opensearch-exporter
     profiles:
-      - elasticsearch-monitoring
+      - opensearch-monitoring
     command:
-      - '--es.uri=http://elasticsearch:9200'
+      - '--es.uri=http://opensearch:9200'
       - '--es.all'
       - '--es.indices'
       - '--es.indices_settings'
@@ -431,8 +414,8 @@ services:
       - '--es.cluster_settings'
       - '--es.timeout=30s'
     environment:
-      - ES_USERNAME=elastic
-      - ES_PASSWORD=${ELASTIC_PASSWORD}
+      - ES_USERNAME=admin
+      - ES_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
     expose:
       - "9114"
     networks:
@@ -440,7 +423,7 @@ services:
         ipv4_address: 172.42.0.26
       ce-base-network:
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9114/health"]
@@ -520,9 +503,9 @@ services:
     restart: always
 
 volumes:
-  elasticsearch-data:
+  opensearch-data:
     driver: local
-  elasticsearch-backups:
+  opensearch-backups:
     driver: local
   apisix-logs:
     driver: local
