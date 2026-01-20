@@ -6,7 +6,10 @@ set -e
 
 OPENSEARCH_HOST="${OPENSEARCH_HOST:-opensearch:9200}"
 OPENSEARCH_USER="${OPENSEARCH_USER:-admin}"
-OPENSEARCH_PASSWORD="${OPENSEARCH_PASSWORD:-AdminPass123!}"
+# Demo mode uses admin/admin as default credentials
+OPENSEARCH_PASSWORD="${OPENSEARCH_PASSWORD:-admin}"
+# Use HTTPS with -k to skip certificate verification (demo mode uses self-signed certs)
+CURL_OPTS="-s -k"
 
 echo "=== OpenSearch Setup Script ==="
 echo "OpenSearch Host: $OPENSEARCH_HOST"
@@ -16,7 +19,7 @@ echo "Waiting for OpenSearch to be ready..."
 max_attempts=60
 attempt=0
 while [ $attempt -lt $max_attempts ]; do
-    if curl -s -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" "http://$OPENSEARCH_HOST/_cluster/health" | grep -q '"status"'; then
+    if curl $CURL_OPTS -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" "https://$OPENSEARCH_HOST/_cluster/health" | grep -q '"status"'; then
         echo "OpenSearch is ready!"
         break
     fi
@@ -33,7 +36,7 @@ fi
 # Get cluster health
 echo ""
 echo "=== Cluster Health ==="
-curl -s -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" "http://$OPENSEARCH_HOST/_cluster/health?pretty"
+curl $CURL_OPTS -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" "https://$OPENSEARCH_HOST/_cluster/health?pretty"
 
 # Create index template for mule-logs with tenant_id mapping
 echo ""
@@ -304,15 +307,15 @@ curl -s -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
 
 echo ""
 echo "Acme user (should see ONLY acme-corp documents):"
-curl -s -u "acme_user:AcmePass123!" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
+curl $CURL_OPTS -u "acme_user:AcmePass123!" \
+    "https://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
     -H "Content-Type: application/json" \
     -d '{"query": {"match_all": {}}}' | grep -E '"total"|"tenant_id"'
 
 echo ""
 echo "Globex user (should see ONLY globex documents):"
-curl -s -u "globex_user:GlobexPass123!" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
+curl $CURL_OPTS -u "globex_user:GlobexPass123!" \
+    "https://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
     -H "Content-Type: application/json" \
     -d '{"query": {"match_all": {}}}' | grep -E '"total"|"tenant_id"'
 

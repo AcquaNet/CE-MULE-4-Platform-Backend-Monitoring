@@ -26,13 +26,8 @@ services:
       - discovery.type=${DISCOVERY_TYPE:-single-node}
       - bootstrap.memory_lock=true
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
-      # Security plugin enabled by default with DLS support
-      - plugins.security.disabled=${OPENSEARCH_SECURITY_DISABLED:-false}
-      - plugins.security.ssl.transport.enabled=false
-      - plugins.security.ssl.http.enabled=false
-      - plugins.security.allow_unsafe_democertificates=true
-      - plugins.security.allow_default_init_securityindex=true
-      # Initial admin password
+      # Security plugin with demo certificates (enables DLS)
+      # Demo mode generates self-signed certs automatically
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
     ulimits:
       memlock:
@@ -54,10 +49,12 @@ services:
         ipv4_address: 172.42.0.10
       ce-base-network:
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u admin:${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!} http://localhost:9200/_cluster/health || exit 1"]
+      # Demo mode uses admin/admin as default credentials
+      test: ["CMD-SHELL", "curl -f -k -u admin:admin https://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   #
   # OpenSearch Dashboards - Visualization (replaces Kibana)
@@ -66,13 +63,13 @@ services:
     image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-2.11.1}
     container_name: opensearch-dashboards
     environment:
-      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - OPENSEARCH_HOSTS=["https://opensearch:9200"]
       - SERVER_BASEPATH=/dashboards
       - SERVER_REWRITEBASEPATH=true
-      # Security settings
+      # Security settings (demo mode uses admin/admin)
       - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
-      # Disable SSL for internal communication (SSL terminated at APISIX)
+      - OPENSEARCH_PASSWORD=admin
+      # Accept self-signed certs from OpenSearch demo mode
       - opensearch.ssl.verificationMode=none
     expose:
       - "5601"
@@ -84,10 +81,12 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      # OpenSearch Dashboards doesn't have /api/status, use root path
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/dashboards/ || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   #
   # Logstash - Log Processing Pipeline (with OpenSearch output)
@@ -98,12 +97,12 @@ services:
     container_name: logstash
     environment:
       - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms1g -Xmx1g}
-      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - OPENSEARCH_HOSTS=https://opensearch:9200
       - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
+      - OPENSEARCH_PASSWORD=admin
       - LOGSTASH_AUTH_TOKEN=${LOGSTASH_AUTH_TOKEN}
     volumes:
-      - ./config/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./config/logstash/config-opensearch/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
       - ./config/logstash/pipeline-opensearch:/usr/share/logstash/pipeline:ro
     # All Logstash access is now routed through APISIX gateway for load balancing support
     # External access via APISIX:
@@ -150,12 +149,13 @@ services:
     image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.52}
     container_name: jaeger
     environment:
-      # OpenSearch storage backend
+      # OpenSearch storage backend (demo mode uses admin/admin)
       - SPAN_STORAGE_TYPE=opensearch
-      - ES_SERVER_URLS=http://opensearch:9200
+      - ES_SERVER_URLS=https://opensearch:9200
       - ES_USERNAME=admin
-      - ES_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
-      - ES_TLS_ENABLED=false
+      - ES_PASSWORD=admin
+      - ES_TLS_ENABLED=true
+      - ES_TLS_SKIP_HOST_VERIFY=true
       # OTLP receiver for OpenTelemetry traces
       - COLLECTOR_OTLP_ENABLED=true
       # Jaeger Query settings
