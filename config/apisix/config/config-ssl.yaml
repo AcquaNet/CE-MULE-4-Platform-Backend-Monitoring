@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-# APISIX Configuration with SSL/TLS for ELK Stack and Mule Platform Gateway
+# APISIX Configuration with SSL/TLS for OpenSearch Stack and Mule Platform Gateway
 
 apisix:
   node_listen:
@@ -169,7 +169,7 @@ plugins:
   - clickhouse-logger
   - tencent-cloud-cls
   - loki-logger
-  - elasticsearch-logger
+  - opensearch-logger
   - opentelemetry
   - inspect
   - example-plugin

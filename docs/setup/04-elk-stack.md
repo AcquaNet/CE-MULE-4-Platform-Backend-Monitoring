@@ -1,37 +1,52 @@
-# ELK Stack Configuration
+# OpenSearch Stack Configuration
 
-This chapter covers ElasticSearch, Logstash, and Kibana configuration and usage.
+This chapter covers OpenSearch, Logstash, and OpenSearch Dashboards configuration and usage.
+
+> **Note**: This platform was migrated from ELK (ElasticSearch, Kibana) to OpenSearch stack for free Document-Level Security (DLS) support and open-source licensing.
 
 ## Overview
 
-The ELK stack provides centralized logging and analytics for all platform services.
+The OpenSearch stack provides centralized logging, analytics, and multi-tenant isolation for all platform services.
 
-## ElasticSearch
+**Key Components:**
+- **OpenSearch**: Search and analytics engine (ElasticSearch-compatible)
+- **Logstash**: Log ingestion and processing
+- **OpenSearch Dashboards**: Visualization UI (Kibana-compatible)
+- **Jaeger**: Distributed tracing with OpenSearch backend
+
+## OpenSearch
 
 ### Access
 
-- **Via APISIX**: http://localhost:9080/elasticsearch
-- **Direct (internal)**: http://elasticsearch:9200
+- **Via APISIX**: http://localhost:9080/opensearch
+- **Direct (HTTPS)**: https://localhost:9200 (requires auth)
+- **Container**: `docker exec opensearch curl ...`
+
+### Authentication
+
+OpenSearch Security is enabled by default:
+- **Default credentials**: `admin` / `admin`
+- **API calls require** `-u admin:admin` and `-k` (skip cert verification)
 
 ### Common Operations
 
 #### Cluster Health
 ```bash
-curl http://localhost:9080/elasticsearch/_cluster/health?pretty
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cluster/health?pretty"
 ```
 
 #### View All Indices
 ```bash
-curl http://localhost:9080/elasticsearch/_cat/indices?v
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cat/indices?v"
 ```
 
 #### Search Logs
 ```bash
 # All Mule logs
-curl http://localhost:9080/elasticsearch/mule-logs-*/_search?pretty
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search?pretty"
 
 # Errors only
-curl -X POST http://localhost:9080/elasticsearch/mule-logs-*/_search?pretty \
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search?pretty" \
   -H 'Content-Type: application/json' -d '
 {
   "query": {
@@ -40,9 +55,21 @@ curl -X POST http://localhost:9080/elasticsearch/mule-logs-*/_search?pretty \
 }'
 ```
 
+#### Filter by Tenant
+```bash
+# Logs for specific tenant
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search?pretty" \
+  -H 'Content-Type: application/json' -d '
+{
+  "query": {
+    "term": { "tenant_id": "acme-corp" }
+  }
+}'
+```
+
 #### Delete Old Indices
 ```bash
-curl -X DELETE "http://localhost:9080/elasticsearch/mule-logs-2024.12.01"
+docker exec opensearch curl -s -k -u admin:admin -X DELETE "https://localhost:9200/mule-logs-2024.12.01"
 ```
 
 ### Configuration
@@ -50,30 +77,48 @@ curl -X DELETE "http://localhost:9080/elasticsearch/mule-logs-2024.12.01"
 Location: `docker-compose.yml`
 
 ```yaml
-elasticsearch:
+opensearch:
+  image: opensearchproject/opensearch:2.11.1
   environment:
-    - ES_JAVA_OPTS=-Xms512m -Xmx512m  # Heap size
-    - xpack.security.enabled=false     # Security (enable in prod!)
+    - cluster.name=opensearch-cluster
+    - discovery.type=single-node
+    - bootstrap.memory_lock=true
+    - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    - plugins.security.disabled=false  # Security enabled
 ```
+
+### Document-Level Security (DLS)
+
+OpenSearch provides FREE DLS for multi-tenancy. Each tenant role filters documents by `tenant_id`:
+
+```json
+{
+  "index_permissions": [{
+    "index_patterns": ["mule-logs-*"],
+    "dls": "{\"term\": {\"tenant_id\": \"acme-corp\"}}",
+    "allowed_actions": ["read", "search"]
+  }]
+}
+```
+
+See [MULTITENANCY_SETUP.md](../MULTITENANCY_SETUP.md) for full setup.
 
 ## Logstash
 
 ### Access
 
-All Logstash services are routed through APISIX for load balancing and centralized management:
+All Logstash services are routed through APISIX for load balancing:
 
-- **Monitoring API** (via APISIX): http://localhost:9080/logstash (load balanced, health checked)
-- **Beats Input** (optional): localhost:5044 (internal by default, uncomment ports in docker-compose.yml for external access)
-- **TCP/UDP Input** (optional): localhost:5000 (internal by default, uncomment ports in docker-compose.yml for external access)
-
-**Note**: For production deployments with multiple Logstash instances, use an external TCP load balancer (HAProxy/nginx) for TCP/UDP inputs. HTTP monitoring API is automatically load balanced via APISIX.
+- **Monitoring API** (via APISIX): http://localhost:9080/logstash
+- **TCP Input**: Internal port 5000 (via APISIX stream proxy at 9100)
+- **Beats Input**: Internal port 5044 (via APISIX stream proxy at 9144)
 
 ### Pipeline Configuration
 
-Location: `logstash/pipeline/logstash.conf`
+Location: `config/logstash/pipeline/logstash.conf`
 
 #### Inputs
-```
+```ruby
 input {
   beats { port => 5044 }
   tcp { port => 5000 codec => json_lines }
@@ -82,12 +127,30 @@ input {
 ```
 
 #### Filters
-```
+```ruby
 filter {
-  # Detect Mule logs
+  # Validate auth token
+  if [auth_token] != "${LOGSTASH_AUTH_TOKEN}" {
+    drop { }
+  }
+
+  # Detect and tag Mule logs
   if [log_type] == "mule" or [application] {
     mutate { add_tag => ["mule"] }
     mutate { add_field => { "[@metadata][target_index]" => "mule-logs" } }
+  }
+
+  # Validate tenant_id
+  if [tenant_id] {
+    if [tenant_id] !~ /^[a-zA-Z0-9\-]{3,50}$/ {
+      mutate { add_tag => ["invalid_tenant_id"] }
+    }
+    mutate { lowercase => ["tenant_id"] }
+  } else {
+    mutate {
+      add_field => { "tenant_id" => "unknown" }
+      add_tag => ["missing_tenant_id"]
+    }
   }
 
   # Parse timestamp
@@ -100,11 +163,15 @@ filter {
 }
 ```
 
-#### Outputs
-```
+#### Outputs (OpenSearch)
+```ruby
 output {
-  elasticsearch {
-    hosts => ["elasticsearch:9200"]
+  opensearch {
+    hosts => ["https://opensearch:9200"]
+    user => "admin"
+    password => "${OPENSEARCH_PASSWORD:admin}"
+    ssl => true
+    ssl_certificate_verification => false
     index => "%{[@metadata][target_index]:-logstash}-%{+YYYY.MM.dd}"
   }
 }
@@ -112,51 +179,25 @@ output {
 
 ### Monitoring API
 
-Check Logstash health and status via APISIX:
+Check Logstash health via APISIX:
 ```bash
-# Get Logstash status (via APISIX - load balanced)
+# Get Logstash status
 curl http://localhost:9080/logstash/
 
 # Get pipeline stats
 curl http://localhost:9080/logstash/_node/stats/pipelines?pretty
-
-# Get plugin stats
-curl http://localhost:9080/logstash/_node/stats/plugins?pretty
-```
-
-Example response:
-```json
-{
-  "host": "118e7b367542",
-  "version": "8.11.3",
-  "status": "green",
-  "pipeline": {
-    "workers": 32,
-    "batch_size": 125,
-    "batch_delay": 50
-  }
-}
 ```
 
 ### Testing
 
-#### Test Monitoring API (Always Available)
+#### Test Monitoring API
 ```bash
 curl http://localhost:9080/logstash/
 ```
 
-#### Test TCP Input (Requires Uncommented Ports)
-
-**Note**: TCP/UDP ports are internal-only by default. To test, uncomment ports in `docker-compose.yml`:
-```yaml
-ports:
-  - "5000:5000/tcp"
-  - "5000:5000/udp"
-```
-
-Then send test log:
+#### Test TCP Input with Auth
 ```bash
-echo '{"application":"test-app","level":"INFO","message":"Test log"}' | nc localhost 5000
+echo '{"application":"test","log_type":"mule","level":"INFO","message":"Test","tenant_id":"acme-corp","auth_token":"YOUR_AUTH_TOKEN"}' | nc localhost 5000
 ```
 
 Check if received:
@@ -164,80 +205,50 @@ Check if received:
 docker-compose logs logstash | tail -20
 ```
 
-### Scaling Logstash
-
-To add multiple Logstash instances for high availability:
-
-1. **Update docker-compose.yml** to add logstash-2:
-```yaml
-logstash-2:
-  image: docker.elastic.co/logstash/logstash:8.11.3
-  container_name: logstash-2
-  environment:
-    - "LS_JAVA_OPTS=-Xms256m -Xmx256m"
-    - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-  volumes:
-    - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
-    - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
-  expose:
-    - "5000"
-    - "5044"
-    - "9600"
-  networks:
-    ce-base-micronet:
-      ipv4_address: 172.42.0.14
-    ce-base-network:
-```
-
-2. **Update APISIX upstream** to include both instances:
-```bash
-curl -X PATCH "http://localhost:9180/apisix/admin/upstreams/2" \
-  -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodes": {
-      "logstash:9600": 100,
-      "logstash-2:9600": 100
-    }
-  }'
-```
-
-3. **For TCP/UDP load balancing**, use external load balancer:
-   - HAProxy with TCP mode
-   - nginx stream module
-   - Cloud provider TCP load balancer
-
-## Kibana
+## OpenSearch Dashboards
 
 ### Access
 
-**Via APISIX**: http://localhost:9080/kibana
+**Via APISIX**: http://localhost:9080/dashboards
+
+**Credentials**: `admin` / `admin`
 
 ### Initial Setup
 
-1. Open Kibana in browser
-2. Navigate to Management → Stack Management → Index Patterns
+1. Open OpenSearch Dashboards in browser
+2. Navigate to **Stack Management** → **Index Patterns**
 3. Create index patterns:
-   - `mule-logs-*` for Mule application logs
-   - `logstash-*` for general logs
+   - `mule-logs-*` (time field: `@timestamp`) - Mule application logs
+   - `logstash-*` (time field: `@timestamp`) - General logs
+   - `jaeger-span-*` (time field: `startTimeMillis`) - APM traces
 
 ### Viewing Logs
 
-1. Go to Analytics → Discover
+1. Go to **Discover**
 2. Select index pattern (`mule-logs-*`)
 3. Add filters:
    - `application: "ce-mule-base"`
    - `level: "ERROR"`
+   - `tenant_id: "acme-corp"`
    - `correlationId: "your-correlation-id"`
 
 ### Creating Dashboards
 
-1. Navigate to Analytics → Dashboard
+1. Navigate to **Dashboards**
 2. Click "Create dashboard"
 3. Add visualizations:
    - **Line Chart**: Log volume over time
    - **Pie Chart**: Log levels distribution
    - **Data Table**: Recent error messages
+   - **Metric**: Error count by tenant
+
+### Multi-Tenant Views
+
+With DLS enabled, tenant users automatically see only their data:
+
+1. Login as tenant user (e.g., `acme_user`)
+2. All queries automatically filtered by `tenant_id`
+3. No additional filters needed
 
 ## Mule Application Integration
 
@@ -250,7 +261,10 @@ Location: `git/CE-MULE-4-Platform-Backend-Mule/src/main/resources/log4j2.xml`
   <JsonTemplateLayout eventTemplateUri="classpath:EcsLayout.json">
     <EventTemplateAdditionalField key="application" value="ce-mule-base"/>
     <EventTemplateAdditionalField key="environment" value="${sys:mule.env}"/>
+    <EventTemplateAdditionalField key="worker_id" value="${sys:mule.worker.id:-worker-1}"/>
     <EventTemplateAdditionalField key="log_type" value="mule"/>
+    <EventTemplateAdditionalField key="tenant_id" value="${ctx:tenant_id:-unknown}"/>
+    <EventTemplateAdditionalField key="auth_token" value="${env:LOGSTASH_AUTH_TOKEN}"/>
   </JsonTemplateLayout>
 </Socket>
 ```
@@ -261,6 +275,8 @@ Location: `git/CE-MULE-4-Platform-Backend-Mule/src/main/resources/log4j2.xml`
 |-------|-------------|---------|
 | application | Application name | ce-mule-base |
 | environment | Deployment env | local-docker |
+| worker_id | Mule worker ID | worker-1 |
+| tenant_id | Tenant identifier | acme-corp |
 | level | Log level | INFO, ERROR, DEBUG |
 | message | Log message | Request processed |
 | correlationId | Request correlation ID | uuid-1234 |
@@ -269,14 +285,14 @@ Location: `git/CE-MULE-4-Platform-Backend-Mule/src/main/resources/log4j2.xml`
 ### Querying Mule Logs
 
 ```bash
-# Find all logs for specific application
-curl -X POST http://localhost:9080/elasticsearch/mule-logs-*/_search?pretty \
+# Find all logs for specific tenant in last hour
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search?pretty" \
   -H 'Content-Type: application/json' -d '
 {
   "query": {
     "bool": {
       "must": [
-        { "match": { "application": "ce-mule-base" } },
+        { "term": { "tenant_id": "acme-corp" } },
         { "range": { "@timestamp": { "gte": "now-1h" } } }
       ]
     }
@@ -286,40 +302,54 @@ curl -X POST http://localhost:9080/elasticsearch/mule-logs-*/_search?pretty \
 }'
 ```
 
-## Data Retention
+## Data Retention (ISM)
+
+OpenSearch uses Index State Management (ISM) instead of ElasticSearch ILM.
 
 ### Current Settings
 
 - Indices created daily: `mule-logs-YYYY.MM.DD`
-- No automatic deletion
+- Default retention: 2 years
 - Data persists in Docker volume
 
 ### Manual Cleanup
 
 ```bash
-# Delete indices older than 30 days
-curl -X DELETE "http://localhost:9080/elasticsearch/mule-logs-$(date -d '30 days ago' +%Y.%m.%d)"
+# Delete specific index
+docker exec opensearch curl -s -k -u admin:admin -X DELETE "https://localhost:9200/mule-logs-2024.12.01"
 ```
 
-### Automatic Cleanup (ILM Policy)
+### Automatic Cleanup (ISM Policy)
 
-Create Index Lifecycle Management policy:
+Create Index State Management policy:
 
 ```bash
-curl -X PUT "http://localhost:9080/elasticsearch/_ilm/policy/mule-logs-policy" \
+docker exec opensearch curl -s -k -u admin:admin -X PUT "https://localhost:9200/_plugins/_ism/policies/mule-logs-policy" \
   -H 'Content-Type: application/json' -d '
 {
   "policy": {
-    "phases": {
-      "hot": {
-        "actions": {}
+    "description": "Mule logs retention policy",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [
+          {
+            "state_name": "delete",
+            "conditions": { "min_index_age": "730d" }
+          }
+        ]
       },
-      "delete": {
-        "min_age": "30d",
-        "actions": {
-          "delete": {}
-        }
+      {
+        "name": "delete",
+        "actions": [{ "delete": {} }],
+        "transitions": []
       }
+    ],
+    "ism_template": {
+      "index_patterns": ["mule-logs-*"],
+      "priority": 100
     }
   }
 }'
@@ -327,13 +357,13 @@ curl -X PUT "http://localhost:9080/elasticsearch/_ilm/policy/mule-logs-policy" \
 
 ## Performance Tuning
 
-### ElasticSearch
+### OpenSearch
 
 ```yaml
-# Increase heap for production
-ES_JAVA_OPTS=-Xms2g -Xmx2g
+# Increase heap for production (docker-compose.yml)
+OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
 
-# Adjust shard count
+# Adjust shard count (index template)
 index.number_of_shards: 1
 index.number_of_replicas: 0
 ```
@@ -344,7 +374,7 @@ index.number_of_replicas: 0
 # Increase heap
 LS_JAVA_OPTS=-Xms512m -Xmx512m
 
-# Worker threads
+# Worker threads (logstash.yml)
 pipeline.workers: 2
 pipeline.batch.size: 125
 ```
@@ -355,40 +385,60 @@ pipeline.batch.size: 125
 
 1. Check Logstash connectivity:
 ```bash
-nc -zv localhost 5000
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cat/indices?v" | grep mule
 ```
 
-2. Test direct send:
+2. Check Logstash logs:
 ```bash
-echo '{"message":"test"}' | nc localhost 5000
+docker-compose logs logstash | grep -i error
 ```
 
-3. Check Logstash logs:
+3. Verify auth token:
 ```bash
-docker-compose logs logstash | grep ERROR
+echo $LOGSTASH_AUTH_TOKEN
 ```
 
-### ElasticSearch Disk Space
+### OpenSearch Disk Space
 
 Check disk usage:
 ```bash
-curl http://localhost:9080/elasticsearch/_cat/allocation?v
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cat/allocation?v"
 ```
 
-Free space:
+### Security Plugin Issues
+
+If security plugin fails:
 ```bash
-# Delete old indices
-curl -X DELETE "http://localhost:9080/elasticsearch/mule-logs-*" -d '
-{
-  "query": {
-    "range": {
-      "@timestamp": {
-        "lt": "now-30d"
-      }
-    }
-  }
-}'
+# Check security plugin status
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_plugins/_security/health"
+
+# View security audit logs
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/security-auditlog-*/_search?pretty&size=10"
 ```
+
+### DLS Not Working
+
+Verify tenant role has DLS query:
+```bash
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_plugins/_security/api/roles/tenant_acme-corp" | jq
+```
+
+## Migration from ElasticSearch
+
+If migrating from ElasticSearch:
+
+| ElasticSearch | OpenSearch Equivalent |
+|---------------|----------------------|
+| `_ilm/policy` | `_plugins/_ism/policies` |
+| X-Pack Security | OpenSearch Security (FREE) |
+| `xpack.security.enabled` | `plugins.security.disabled=false` |
+| Kibana | OpenSearch Dashboards |
+
+**Key Benefits of OpenSearch:**
+- Document-Level Security (DLS) is FREE
+- No licensing restrictions
+- API-compatible with ElasticSearch 7.x
+- Active open-source development
 
 ## Next Chapter
 

@@ -1,6 +1,6 @@
 {
-  "_comment": "ElasticSearch Role Mapping for Multi-Tenancy with Keycloak OIDC",
-  "_description": "Maps Keycloak JWT claims to ElasticSearch roles for Document-Level Security",
+  "_comment": "OpenSearch Role Mapping for Multi-Tenancy with Keycloak OIDC",
+  "_description": "Maps Keycloak JWT claims to OpenSearch roles for Document-Level Security",
 
   "tenant_user_role": {
     "_comment": "Base role for tenant users with DLS filtering by tenant_id",
@@ -18,7 +18,7 @@
     ],
     "applications": [
       {
-        "application": "kibana-.kibana",
+        "application": "opensearch-dashboards",
         "privileges": [
           "feature_discover.read",
           "feature_dashboard.read",
@@ -50,7 +50,7 @@
     ],
     "applications": [
       {
-        "application": "kibana-.kibana",
+        "application": "opensearch-dashboards",
         "privileges": [
           "feature_discover.all",
           "feature_dashboard.all",

@@ -192,7 +192,16 @@
       "Bash(export ELASTIC_PASSWORD=\"Da1EP5yfArpF4dEocvZzqJKDgKXP6c4V\")",
       "Bash(export ELASTICSEARCH_HOST=\"http://localhost:9080/elasticsearch\")",
       "Bash(powershell -Command \"$client = New-Object System.Net.Sockets.TcpClient\\(''localhost'', 5000\\); $stream = $client.GetStream\\(\\); $writer = New-Object System.IO.StreamWriter\\($stream\\); $writer.WriteLine\\(''{\"\"auth_token\"\":\"\"8fcrQrMcOyWbn6nJdoFzkTpXQGyOHMJw7qcfUotk2v8=\"\",\"\"tenant_id\"\":\"\"test-tenant\"\",\"\"application\"\":\"\"test-app\"\",\"\"log_type\"\":\"\"mule\"\",\"\"environment\"\":\"\"test\"\",\"\"level\"\":\"\"INFO\"\",\"\"message\"\":\"\"Test log with tenant_id from multitenancy test\"\",\"\"loggerName\"\":\"\"com.test.multitenancy\"\",\"\"thread\"\":\"\"main\"\"}''\\); $writer.Flush\\(\\); $client.Close\\(\\); Write-Host ''Log sent successfully''\")",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(AUTH_TOKEN=\"8fcrQrMcOyWbn6nJdoFzkTpXQGyOHMJw7qcfUotk2v8=\")",
+      "Bash(do docker exec ce-base-mule-backend-1 curl -s http://localhost:8081/api/v1/status)",
+      "Bash(do docker exec ce-base-mule-backend-2 curl -s http://localhost:8081/api/v1/status)",
+      "Bash(do docker exec ce-base-mule-backend-1 sh -c \"curl -s http://localhost:8081/api/v1/status > /dev/null\")",
+      "Bash(do docker exec ce-base-mule-backend-2 sh -c \"curl -s http://localhost:8081/api/v1/status > /dev/null\")",
+      "Bash(jq:*)",
+      "Bash(powershell -Command \"$log = ''{\"\"application\"\":\"\"demo\"\",\"\"log_type\"\":\"\"mule\"\",\"\"level\"\":\"\"INFO\"\",\"\"message\"\":\"\"ACME test from PowerShell\"\",\"\"tenant_id\"\":\"\"acme-corp\"\",\"\"worker_id\"\":\"\"demo\"\"}''; $client = New-Object System.Net.Sockets.TcpClient\\(''localhost'', 9100\\); $stream = $client.GetStream\\(\\); $writer = New-Object System.IO.StreamWriter\\($stream\\); $writer.WriteLine\\($log\\); $writer.Flush\\(\\); $client.Close\\(\\); Write-Host ''Log sent successfully''\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\work\\\\Aqua\\\\Docker ElasticSearch\\\\send-log.ps1\" -TenantId \"acme-corp\" -Level \"INFO\" -Message \"ACME demo log created\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\work\\\\Aqua\\\\Docker ElasticSearch\\\\send-log.ps1\" -TenantId \"acme-corp\" -Level \"ERROR\" -Message \"ACME Payment gateway failed\")"
     ],
     "deny": [],
     "ask": []

@@ -61,11 +61,11 @@ ssls:
       -----END PRIVATE KEY-----
 routes:
   #
-  # Kibana Routes - Web UI Access
+  # OpenSearch Dashboards Routes - Web UI Access (replaces OpenSearch Dashboards)
   #
-  - uri: /kibana
-    name: kibana-root
-    desc: "Kibana root redirect"
+  - uri: /dashboards
+    name: dashboards-root
+    desc: "OpenSearch Dashboards root redirect"
     methods:
       - GET
       - POST
@@ -78,7 +78,7 @@ routes:
       scheme: http
       pass_host: pass
       nodes:
-        "kibana:5601": 1
+        "opensearch-dashboards:5601": 1
       type: roundrobin
       timeout:
         connect: 60
@@ -86,15 +86,15 @@ routes:
         read: 60
     plugins:
       proxy-rewrite:
-        uri: /
+        uri: /dashboards/
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
         allow_headers: "*"
 
-  - uri: /kibana/*
-    name: kibana-proxy
-    desc: "Kibana web UI and API proxy"
+  - uri: /dashboards/*
+    name: dashboards-proxy
+    desc: "OpenSearch Dashboards web UI and API proxy"
     methods:
       - GET
       - POST
@@ -107,71 +107,49 @@ routes:
       scheme: http
       pass_host: pass
       nodes:
-        "kibana:5601": 1
+        "opensearch-dashboards:5601": 1
       type: roundrobin
       timeout:
         connect: 60
         send: 60
         read: 60
     plugins:
-      proxy-rewrite:
-        regex_uri:
-          - "^/kibana(.*)"
-          - "$1"
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
         allow_headers: "*"
 
   #
-  # ElasticSearch Routes - Search and Analytics API
+  # OpenSearch Routes - Search and Analytics API (replaces OpenSearch)
   #
-  - uri: /elasticsearch
-    name: elasticsearch-root
-    desc: "ElasticSearch root endpoint"
+  - uri: /opensearch
+    name: opensearch-root
+    desc: "OpenSearch root endpoint"
     methods:
       - GET
       - POST
       - PUT
       - DELETE
       - HEAD
-    upstream:
-      scheme: http
-      pass_host: pass
-      nodes:
-        "elasticsearch:9200": 1
-      type: roundrobin
-      timeout:
-        connect: 60
-        send: 60
-        read: 60
+    upstream_id: "3"
     plugins:
       proxy-rewrite:
         uri: /
 
-  - uri: /elasticsearch/*
-    name: elasticsearch-api
-    desc: "ElasticSearch API proxy for queries and management"
+  - uri: /opensearch/*
+    name: opensearch-api
+    desc: "OpenSearch API proxy for queries and management"
     methods:
       - GET
       - POST
       - PUT
       - DELETE
       - HEAD
-    upstream:
-      scheme: http
-      pass_host: pass
-      nodes:
-        "elasticsearch:9200": 1
-      type: roundrobin
-      timeout:
-        connect: 60
-        send: 60
-        read: 60
+    upstream_id: "3"
     plugins:
       proxy-rewrite:
         regex_uri:
-          - "^/elasticsearch(.*)"
+          - "^/opensearch(.*)"
           - "$1"
 
   #
@@ -202,54 +180,53 @@ routes:
           - "$1"
 
   #
-  # APM Server Routes - Application Performance Monitoring
-  # Note: Direct port 8200 also available for agent communication (HTTPS)
+  # Jaeger Routes - Distributed Tracing UI (replaces APM Server)
   #
-  - uri: /apm-server
-    name: apm-server-root
-    desc: "APM Server root endpoint"
+  - uri: /jaeger
+    name: jaeger-root
+    desc: "Jaeger UI root endpoint"
     methods:
       - GET
       - POST
     upstream:
-      scheme: https
+      scheme: http
       pass_host: pass
       nodes:
-        "apm-server:8200": 1
+        "jaeger:16686": 1
       type: roundrobin
       timeout:
         connect: 60
         send: 60
         read: 60
-      tls:
-        verify: false
     plugins:
       proxy-rewrite:
-        uri: /
+        uri: /jaeger/
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
 
-  - uri: /apm-server/*
-    name: apm-server-api
-    desc: "APM Server data ingestion and API"
+  - uri: /jaeger/*
+    name: jaeger-proxy
+    desc: "Jaeger UI and API"
     methods:
       - GET
       - POST
     upstream:
-      scheme: https
+      scheme: http
       pass_host: pass
       nodes:
-        "apm-server:8200": 1
+        "jaeger:16686": 1
       type: roundrobin
       timeout:
         connect: 60
         send: 60
         read: 60
-      tls:
-        verify: false
     plugins:
-      proxy-rewrite:
-        regex_uri:
-          - "^/apm-server(.*)"
-          - "$1"
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "*"
 
   #
   # Mule Platform Routes - Load Balanced Across Workers
@@ -732,6 +709,22 @@ upstreams:
             - 503
             - 504
           http_failures: 3
+
+  #
+  # OpenSearch Upstream - HTTPS with self-signed cert (no verification)
+  #
+  - id: "3"
+    name: opensearch
+    desc: "OpenSearch cluster with HTTPS (self-signed cert)"
+    type: roundrobin
+    scheme: https
+    pass_host: pass
+    timeout:
+      connect: 60
+      send: 60
+      read: 60
+    nodes:
+      "opensearch:9200": 1
 
 #
 # Stream Routes - TCP/UDP Proxying for Logstash Log Ingestion

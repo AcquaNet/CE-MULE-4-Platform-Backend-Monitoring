@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# ElasticSearch Index Lifecycle Management (ILM) Setup Script
+# OpenSearch Index Lifecycle Management (ILM) Setup Script
 #
 # This script configures automatic log retention policies for production environments.
 # Configuration is read from .env file for consistency with other automation scripts.
@@ -58,7 +58,7 @@ else
 fi
 
 # Configuration with defaults
-ES_URL="${ES_HOST:-http://localhost:9080/elasticsearch}"
+ES_URL="${ES_HOST:-http://localhost:9080/opensearch}"
 MULE_LOGS_RETENTION_DAYS="${MULE_LOGS_RETENTION_DAYS:-730}"
 LOGSTASH_LOGS_RETENTION_DAYS="${LOGSTASH_LOGS_RETENTION_DAYS:-730}"
 ROLLOVER_SIZE="${ROLLOVER_SIZE:-1gb}"
@@ -67,7 +67,7 @@ ILM_ENABLED="${ILM_ENABLED:-true}"
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ElasticSearch Index Lifecycle Management Setup${NC}"
+echo -e "${BLUE}   OpenSearch Index Lifecycle Management Setup${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -84,21 +84,21 @@ if [ "$ILM_ENABLED" != "true" ]; then
 fi
 
 echo -e "${YELLOW}Configuration:${NC}"
-echo "  ElasticSearch URL: $ES_URL"
+echo "  OpenSearch URL: $ES_URL"
 echo "  Mule Logs Retention: $MULE_LOGS_RETENTION_DAYS days ($(echo "scale=1; $MULE_LOGS_RETENTION_DAYS / 365" | bc) years)"
 echo "  Logstash Logs Retention: $LOGSTASH_LOGS_RETENTION_DAYS days ($(echo "scale=1; $LOGSTASH_LOGS_RETENTION_DAYS / 365" | bc) years)"
 echo "  Rollover Size: $ROLLOVER_SIZE"
 echo "  Rollover Age: $ROLLOVER_MAX_AGE"
 echo ""
 
-# Check ElasticSearch connectivity
-echo "Checking ElasticSearch connectivity..."
+# Check OpenSearch connectivity
+echo "Checking OpenSearch connectivity..."
 if ! curl -sf "$ES_URL/_cluster/health" > /dev/null 2>&1; then
-    echo "ERROR: Cannot connect to ElasticSearch at $ES_URL"
-    echo "Please ensure ElasticSearch is running and accessible via APISIX"
+    echo "ERROR: Cannot connect to OpenSearch at $ES_URL"
+    echo "Please ensure OpenSearch is running and accessible via APISIX"
     exit 1
 fi
-echo "✓ ElasticSearch is accessible"
+echo "✓ OpenSearch is accessible"
 echo ""
 
 # Create ILM policy for Mule logs
@@ -282,13 +282,13 @@ echo "  Then re-run: ${BLUE}./config/ilm/setup-retention-policy.sh${NC}"
 echo ""
 echo -e "${GREEN}View Policies:${NC}"
 echo ""
-echo "  Kibana UI:"
-echo "    1. Open: http://localhost:9080/kibana"
+echo "  OpenSearch Dashboards UI:"
+echo "    1. Open: http://localhost:9080/dashboards"
 echo "    2. Go to: Management → Stack Management → Index Lifecycle Policies"
 echo ""
 echo "  Via API:"
-echo "    ${BLUE}curl http://localhost:9080/elasticsearch/_ilm/policy?pretty${NC}"
+echo "    ${BLUE}curl http://localhost:9080/opensearch/_ilm/policy?pretty${NC}"
 echo ""
 echo "  Check index status:"
-echo "    ${BLUE}curl http://localhost:9080/elasticsearch/mule-logs-*/_ilm/explain?pretty${NC}"
+echo "    ${BLUE}curl http://localhost:9080/opensearch/mule-logs-*/_ilm/explain?pretty${NC}"
 echo ""

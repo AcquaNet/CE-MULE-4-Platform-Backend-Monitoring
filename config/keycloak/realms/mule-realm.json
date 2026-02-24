@@ -47,7 +47,7 @@
       "realmRoles": ["user", "admin"],
       "clientRoles": {
         "mule-api-gateway": ["api-access"],
-        "kibana": ["kibana-user"]
+        "dashboards": ["dashboards-user"]
       },
       "groups": ["/tenants/tenant-default"]
     },
@@ -70,7 +70,7 @@
       "realmRoles": ["user"],
       "clientRoles": {
         "mule-api-gateway": ["api-access"],
-        "kibana": ["kibana-user"]
+        "dashboards": ["dashboards-user"]
       },
       "groups": ["/tenants/tenant-demo"]
     }
@@ -86,8 +86,8 @@
         "description": "Administrator role"
       },
       {
-        "name": "kibana-admin",
-        "description": "Kibana administrator role"
+        "name": "dashboards-admin",
+        "description": "OpenSearch Dashboards administrator role"
       }
     ],
     "client": {
@@ -97,14 +97,14 @@
           "description": "API access role"
         }
       ],
-      "kibana": [
+      "dashboards": [
         {
-          "name": "kibana-user",
-          "description": "Kibana user role for log viewing"
+          "name": "dashboards-user",
+          "description": "OpenSearch Dashboards user role for log viewing"
         },
         {
-          "name": "kibana-admin",
-          "description": "Kibana admin role"
+          "name": "dashboards-admin",
+          "description": "OpenSearch Dashboards admin role"
         }
       ]
     }
@@ -197,16 +197,16 @@
       ]
     },
     {
-      "clientId": "kibana",
-      "name": "Kibana OIDC Client",
-      "description": "Kibana ElasticSearch OIDC Client for SSO",
+      "clientId": "dashboards",
+      "name": "OpenSearch Dashboards OIDC Client",
+      "description": "OpenSearch Dashboards OpenSearch OIDC Client for SSO",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "${KIBANA_OIDC_CLIENT_SECRET:-kibana-oidc-secret-12345}",
+      "secret": "${DASHBOARDS_OIDC_CLIENT_SECRET:-dashboards-oidc-secret-12345}",
       "redirectUris": [
-        "http://localhost:9080/kibana/api/security/oidc/callback",
+        "http://localhost:9080/dashboards/api/security/oidc/callback",
         "http://localhost:5601/api/security/oidc/callback",
-        "https://localhost:9443/kibana/api/security/oidc/callback"
+        "https://localhost:9443/dashboards/api/security/oidc/callback"
       ],
       "webOrigins": [
         "http://localhost:9080",

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Health Check Script for ELK Stack and Monitoring Services
+# Health Check Script for OpenSearch Stack and Monitoring Services
 #
-# This script checks the health status of all services in the ELK stack
+# This script checks the health status of all services in the OpenSearch stack
 # and monitoring infrastructure.
 #
 # Usage:
@@ -79,15 +79,15 @@ perform_health_checks() {
     # Initialize results
     declare -A health_status
 
-    # ELK Stack Services
-    health_status[elasticsearch]=$(check_http "ElasticSearch" "http://localhost:9080/elasticsearch/_cluster/health" 10)
-    health_status[elasticsearch_container]=$(check_container "elasticsearch")
+    # OpenSearch Stack Services
+    health_status[opensearch]=$(check_http "OpenSearch" "http://localhost:9080/opensearch/_cluster/health" 10)
+    health_status[opensearch_container]=$(check_container "opensearch")
 
     health_status[logstash]=$(check_http "Logstash" "http://localhost:9080/logstash" 10)
     health_status[logstash_container]=$(check_container "logstash")
 
-    health_status[kibana]=$(check_http "Kibana" "http://localhost:9080/kibana/api/status" 10)
-    health_status[kibana_container]=$(check_container "kibana")
+    health_status[dashboards]=$(check_http "OpenSearch Dashboards" "http://localhost:9080/dashboards/api/status" 10)
+    health_status[dashboards_container]=$(check_container "dashboards")
 
     health_status[apm_server]=$(check_container "apm-server")
 
@@ -108,12 +108,12 @@ perform_health_checks() {
     health_status[alertmanager]=$(check_http "Alertmanager" "http://localhost:9093/-/healthy" 5)
     health_status[alertmanager_container]=$(check_container "alertmanager")
 
-    health_status[elasticsearch_exporter]=$(check_http "ES Exporter" "http://localhost:9114/health" 5)
-    health_status[elasticsearch_exporter_container]=$(check_container "elasticsearch-exporter")
+    health_status[opensearch_exporter]=$(check_http "ES Exporter" "http://localhost:9114/health" 5)
+    health_status[opensearch_exporter_container]=$(check_container "opensearch-exporter")
 
-    # ElasticSearch cluster health details
-    if [ "${health_status[elasticsearch]}" = "healthy" ]; then
-        ES_CLUSTER_HEALTH=$(curl -sf "http://localhost:9080/elasticsearch/_cluster/health" 2>/dev/null || echo '{"status":"unknown"}')
+    # OpenSearch cluster health details
+    if [ "${health_status[opensearch]}" = "healthy" ]; then
+        ES_CLUSTER_HEALTH=$(curl -sf "http://localhost:9080/opensearch/_cluster/health" 2>/dev/null || echo '{"status":"unknown"}')
         health_status[es_cluster_status]=$(echo "$ES_CLUSTER_HEALTH" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
         health_status[es_cluster_nodes]=$(echo "$ES_CLUSTER_HEALTH" | grep -o '"number_of_nodes":[0-9]*' | cut -d':' -f2)
         health_status[es_unassigned_shards]=$(echo "$ES_CLUSTER_HEALTH" | grep -o '"unassigned_shards":[0-9]*' | cut -d':' -f2)
@@ -134,10 +134,10 @@ output_json() {
     cat <<EOF
 {
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "elk_stack": {
-    "elasticsearch": {
-      "health": "$health_elasticsearch",
-      "container": "$health_elasticsearch_container",
+  "opensearch_stack": {
+    "opensearch": {
+      "health": "$health_opensearch",
+      "container": "$health_opensearch_container",
       "cluster_status": "$health_es_cluster_status",
       "cluster_nodes": $health_es_cluster_nodes,
       "unassigned_shards": $health_es_unassigned_shards
@@ -146,9 +146,9 @@ output_json() {
       "health": "$health_logstash",
       "container": "$health_logstash_container"
     },
-    "kibana": {
-      "health": "$health_kibana",
-      "container": "$health_kibana_container"
+    "dashboards": {
+      "health": "$health_dashboards",
+      "container": "$health_dashboards_container"
     },
     "apm_server": {
       "container": "$health_apm_server"
@@ -176,9 +176,9 @@ output_json() {
       "health": "$health_alertmanager",
       "container": "$health_alertmanager_container"
     },
-    "elasticsearch_exporter": {
-      "health": "$health_elasticsearch_exporter",
-      "container": "$health_elasticsearch_exporter_container"
+    "opensearch_exporter": {
+      "health": "$health_opensearch_exporter",
+      "container": "$health_opensearch_exporter_container"
     }
   }
 }
@@ -188,20 +188,20 @@ EOF
 # Function to output human-readable format
 output_human() {
     echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}   ELK Stack Health Check - $(date)${NC}"
+    echo -e "${BLUE}   OpenSearch Stack Health Check - $(date)${NC}"
     echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
     echo ""
 
-    echo -e "${YELLOW}ELK Stack Services:${NC}"
-    print_service_status "ElasticSearch" "$health_elasticsearch" "$health_elasticsearch_container"
-    if [ "$VERBOSE" = true ] && [ "$health_elasticsearch" = "healthy" ]; then
+    echo -e "${YELLOW}OpenSearch Stack Services:${NC}"
+    print_service_status "OpenSearch" "$health_opensearch" "$health_opensearch_container"
+    if [ "$VERBOSE" = true ] && [ "$health_opensearch" = "healthy" ]; then
         echo "    Cluster Status: $(get_status_color "$health_es_cluster_status")"
         echo "    Nodes: $health_es_cluster_nodes"
         echo "    Unassigned Shards: $health_es_unassigned_shards"
     fi
 
     print_service_status "Logstash" "$health_logstash" "$health_logstash_container"
-    print_service_status "Kibana" "$health_kibana" "$health_kibana_container"
+    print_service_status "OpenSearch Dashboards" "$health_dashboards" "$health_dashboards_container"
     print_service_status "APM Server" "-" "$health_apm_server"
     echo ""
 
@@ -214,14 +214,14 @@ output_human() {
     print_service_status "Prometheus" "$health_prometheus" "$health_prometheus_container"
     print_service_status "Grafana" "$health_grafana" "$health_grafana_container"
     print_service_status "Alertmanager" "$health_alertmanager" "$health_alertmanager_container"
-    print_service_status "ES Exporter" "$health_elasticsearch_exporter" "$health_elasticsearch_exporter_container"
+    print_service_status "ES Exporter" "$health_opensearch_exporter" "$health_opensearch_exporter_container"
     echo ""
 
     # Summary
     total_healthy=0
     total_unhealthy=0
 
-    for status in "$health_elasticsearch" "$health_logstash" "$health_kibana" "$health_apisix" "$health_prometheus" "$health_grafana"; do
+    for status in "$health_opensearch" "$health_logstash" "$health_dashboards" "$health_apisix" "$health_prometheus" "$health_grafana"; do
         if [ "$status" = "healthy" ]; then
             ((total_healthy++))
         elif [ "$status" = "unhealthy" ]; then

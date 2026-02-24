@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Restore ElasticSearch Snapshot
+# Restore OpenSearch Snapshot
 #
-# This script restores indices from an ElasticSearch snapshot.
+# This script restores indices from an OpenSearch snapshot.
 #
 # Usage:
 #   ./config/backup/restore.sh <snapshot_name> [indices_pattern]
@@ -52,25 +52,25 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# ElasticSearch connection details
-ES_HOST="${ES_HOST:-http://localhost:9080/elasticsearch}"
+# OpenSearch connection details
+ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
 ES_USER="${ES_USER:-elastic}"
-ES_PASSWORD="${ELASTIC_PASSWORD}"
+ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ElasticSearch Snapshot Restore${NC}"
+echo -e "${BLUE}   OpenSearch Snapshot Restore${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Check ElasticSearch connectivity
-echo -e "${GREEN}Checking ElasticSearch connectivity...${NC}"
+# Check OpenSearch connectivity
+echo -e "${GREEN}Checking OpenSearch connectivity...${NC}"
 if ! curl -s -u "${ES_USER}:${ES_PASSWORD}" "${ES_HOST}/_cluster/health" > /dev/null 2>&1; then
-    echo -e "${RED}Error: Cannot connect to ElasticSearch at ${ES_HOST}${NC}"
+    echo -e "${RED}Error: Cannot connect to OpenSearch at ${ES_HOST}${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Connected to ElasticSearch${NC}"
+echo -e "${GREEN}✓ Connected to OpenSearch${NC}"
 echo ""
 
 # Check if repository exists
@@ -232,6 +232,6 @@ echo ""
 echo "Snapshot: ${SNAPSHOT_NAME}"
 echo "Indices Pattern: ${INDICES_PATTERN}"
 echo ""
-echo "Verify data in Kibana:"
-echo "  ${BLUE}http://localhost:9080/kibana${NC}"
+echo "Verify data in OpenSearch Dashboards:"
+echo "  ${BLUE}http://localhost:9080/dashboards${NC}"
 echo ""

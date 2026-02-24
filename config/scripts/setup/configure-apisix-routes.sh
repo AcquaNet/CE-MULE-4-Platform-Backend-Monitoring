@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # APISIX Route Configuration Script
-# Run this after the ELK + APISIX stack is running
+# Run this after the OpenSearch + APISIX stack is running
 
 set -e
 
@@ -16,49 +16,49 @@ echo "[1/6] Testing APISIX Admin API..."
 curl -s "${ADMIN_URL}/routes" -H "X-API-KEY: ${ADMIN_KEY}" > /dev/null
 echo "✓ Admin API accessible"
 
-# Create Kibana Route
-echo "[2/6] Creating Kibana route..."
-curl -s -X PUT "${ADMIN_URL}/routes/kibana" \
+# Create OpenSearch Dashboards Route
+echo "[2/6] Creating OpenSearch Dashboards route..."
+curl -s -X PUT "${ADMIN_URL}/routes/dashboards" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "uri": "/kibana/*",
-    "name": "kibana-proxy",
+    "uri": "/dashboards/*",
+    "name": "dashboards-proxy",
     "upstream": {
       "nodes": {
-        "kibana:5601": 1
+        "dashboards:5601": 1
       },
       "type": "roundrobin"
     },
     "plugins": {
       "proxy-rewrite": {
-        "regex_uri": ["^/kibana(.*)", "$1"]
+        "regex_uri": ["^/dashboards(.*)", "$1"]
       }
     }
   }' > /dev/null
-echo "✓ Kibana route created"
+echo "✓ OpenSearch Dashboards route created"
 
-# Create ElasticSearch Route
-echo "[3/6] Creating ElasticSearch route..."
-curl -s -X PUT "${ADMIN_URL}/routes/elasticsearch" \
+# Create OpenSearch Route
+echo "[3/6] Creating OpenSearch route..."
+curl -s -X PUT "${ADMIN_URL}/routes/opensearch" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "uri": "/elasticsearch/*",
-    "name": "elasticsearch-api",
+    "uri": "/opensearch/*",
+    "name": "opensearch-api",
     "upstream": {
       "nodes": {
-        "elasticsearch:9200": 1
+        "opensearch:9200": 1
       },
       "type": "roundrobin"
     },
     "plugins": {
       "proxy-rewrite": {
-        "regex_uri": ["^/elasticsearch(.*)", "$1"]
+        "regex_uri": ["^/opensearch(.*)", "$1"]
       }
     }
   }' > /dev/null
-echo "✓ ElasticSearch route created"
+echo "✓ OpenSearch route created"
 
 # Create Mule Upstream (Load Balancer)
 echo "[4/6] Creating Mule workers upstream..."
@@ -137,8 +137,8 @@ echo "APISIX Routes Configured Successfully!"
 echo "========================================="
 echo ""
 echo "Test the routes:"
-echo "  - Kibana:        curl http://localhost:9080/kibana"
-echo "  - ElasticSearch: curl http://localhost:9080/elasticsearch"
+echo "  - OpenSearch Dashboards:        curl http://localhost:9080/dashboards"
+echo "  - OpenSearch: curl http://localhost:9080/opensearch"
 echo "  - Mule API:      curl http://localhost:9080/api/v1/status"
 echo "  - ActiveMQ:      curl http://localhost:9080/activemq"
 echo ""

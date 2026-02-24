@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Create ElasticSearch Snapshot Backup
+# Create OpenSearch Snapshot Backup
 #
-# This script creates a snapshot of ElasticSearch indices based on settings
+# This script creates a snapshot of OpenSearch indices based on settings
 # in the .env file. Can be run manually or via cron for automated backups.
 #
 # Usage:
@@ -46,10 +46,10 @@ if [ "${BACKUP_ENABLED:-true}" != "true" ]; then
     exit 0
 fi
 
-# ElasticSearch connection details
-ES_HOST="${ES_HOST:-http://localhost:9080/elasticsearch}"
+# OpenSearch connection details
+ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
 ES_USER="${ES_USER:-elastic}"
-ES_PASSWORD="${ELASTIC_PASSWORD}"
+ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
 # Snapshot name (auto-generate if not provided)
@@ -83,17 +83,17 @@ fi
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ElasticSearch Snapshot Backup${NC}"
+echo -e "${BLUE}   OpenSearch Snapshot Backup${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Check ElasticSearch connectivity
-echo -e "${GREEN}Checking ElasticSearch connectivity...${NC}"
+# Check OpenSearch connectivity
+echo -e "${GREEN}Checking OpenSearch connectivity...${NC}"
 if ! curl -s -u "${ES_USER}:${ES_PASSWORD}" "${ES_HOST}/_cluster/health" > /dev/null 2>&1; then
-    echo -e "${RED}Error: Cannot connect to ElasticSearch at ${ES_HOST}${NC}"
+    echo -e "${RED}Error: Cannot connect to OpenSearch at ${ES_HOST}${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Connected to ElasticSearch${NC}"
+echo -e "${GREEN}✓ Connected to OpenSearch${NC}"
 echo ""
 
 # Check if repository exists
@@ -259,7 +259,7 @@ if [ "$SNAPSHOT_STATE" = "SUCCESS" ]; then
 
         NOTIFICATION_PAYLOAD=$(cat <<EOF
 {
-  "text": "✅ ElasticSearch Backup Successful",
+  "text": "✅ OpenSearch Backup Successful",
   "attachments": [
     {
       "color": "good",
@@ -314,7 +314,7 @@ elif [ "$SNAPSHOT_STATE" = "FAILED" ]; then
     if [ "${BACKUP_NOTIFICATIONS_ENABLED:-false}" = "true" ] && [ -n "${BACKUP_WEBHOOK_URL}" ]; then
         NOTIFICATION_PAYLOAD=$(cat <<EOF
 {
-  "text": "❌ ElasticSearch Backup Failed",
+  "text": "❌ OpenSearch Backup Failed",
   "attachments": [
     {
       "color": "danger",

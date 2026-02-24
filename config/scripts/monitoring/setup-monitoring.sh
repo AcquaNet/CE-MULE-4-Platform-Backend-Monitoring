@@ -4,7 +4,7 @@
 #
 # This script configures the monitoring and alerting system based on .env settings.
 # It handles:
-# - Enabling/disabling monitoring services (Prometheus, Grafana, ElasticSearch exporter)
+# - Enabling/disabling monitoring services (Prometheus, Grafana, OpenSearch exporter)
 # - Configuring Alertmanager with notification channels
 # - Setting up alert rules and thresholds
 #
@@ -78,12 +78,12 @@ fi
 # Configuration with defaults
 MONITORING_ENABLED="${MONITORING_ENABLED:-true}"
 ALERTING_ENABLED="${ALERTING_ENABLED:-false}"
-ELASTICSEARCH_EXPORTER_ENABLED="${ELASTICSEARCH_EXPORTER_ENABLED:-true}"
+OPENSEARCH_EXPORTER_ENABLED="${OPENSEARCH_EXPORTER_ENABLED:-true}"
 PROMETHEUS_RETENTION="${PROMETHEUS_RETENTION:-30d}"
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ELK Stack Monitoring and Alerting Setup${NC}"
+echo -e "${BLUE}   OpenSearch Stack Monitoring and Alerting Setup${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -94,7 +94,7 @@ if [ "$STATUS_ONLY" = true ]; then
     echo "Configuration (.env):"
     echo "  Monitoring Enabled: ${MONITORING_ENABLED}"
     echo "  Alerting Enabled: ${ALERTING_ENABLED}"
-    echo "  ElasticSearch Exporter: ${ELASTICSEARCH_EXPORTER_ENABLED}"
+    echo "  OpenSearch Exporter: ${OPENSEARCH_EXPORTER_ENABLED}"
     echo ""
 
     echo "Running Services:"
@@ -105,7 +105,7 @@ if [ "$STATUS_ONLY" = true ]; then
         echo "  Prometheus: $(docker ps --filter 'name=prometheus' --format '{{.Status}}' 2>/dev/null || echo 'Not running')"
         echo "  Grafana: $(docker ps --filter 'name=grafana' --format '{{.Status}}' 2>/dev/null || echo 'Not running')"
         echo "  Alertmanager: $(docker ps --filter 'name=alertmanager' --format '{{.Status}}' 2>/dev/null || echo 'Not running')"
-        echo "  ES Exporter: $(docker ps --filter 'name=elasticsearch-exporter' --format '{{.Status}}' 2>/dev/null || echo 'Not running')"
+        echo "  ES Exporter: $(docker ps --filter 'name=opensearch-exporter' --format '{{.Status}}' 2>/dev/null || echo 'Not running')"
     fi
     echo ""
 
@@ -121,7 +121,7 @@ fi
 echo -e "${YELLOW}Configuration:${NC}"
 echo "  Monitoring Enabled: ${MONITORING_ENABLED}"
 echo "  Alerting Enabled: ${ALERTING_ENABLED}"
-echo "  ElasticSearch Exporter: ${ELASTICSEARCH_EXPORTER_ENABLED}"
+echo "  OpenSearch Exporter: ${OPENSEARCH_EXPORTER_ENABLED}"
 echo "  Metrics Retention: ${PROMETHEUS_RETENTION}"
 echo ""
 
@@ -204,15 +204,15 @@ PROFILES=""
 if [ "$ALERTING_ENABLED" = "true" ]; then
     PROFILES="$PROFILES --profile alerting"
 fi
-if [ "$ELASTICSEARCH_EXPORTER_ENABLED" = "true" ]; then
-    PROFILES="$PROFILES --profile elasticsearch-monitoring"
+if [ "$OPENSEARCH_EXPORTER_ENABLED" = "true" ]; then
+    PROFILES="$PROFILES --profile opensearch-monitoring"
 fi
 
 echo "Services to start:"
 echo "  - Prometheus (always enabled)"
 echo "  - Grafana (always enabled)"
-if [ "$ELASTICSEARCH_EXPORTER_ENABLED" = "true" ]; then
-    echo "  - ElasticSearch Exporter"
+if [ "$OPENSEARCH_EXPORTER_ENABLED" = "true" ]; then
+    echo "  - OpenSearch Exporter"
 fi
 if [ "$ALERTING_ENABLED" = "true" ]; then
     echo "  - Alertmanager"
@@ -260,12 +260,12 @@ if [ "$VERIFY" = true ]; then
         fi
     fi
 
-    # Check ElasticSearch Exporter if enabled
-    if [ "$ELASTICSEARCH_EXPORTER_ENABLED" = "true" ]; then
+    # Check OpenSearch Exporter if enabled
+    if [ "$OPENSEARCH_EXPORTER_ENABLED" = "true" ]; then
         if curl -sf "http://localhost:9114/health" > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ ElasticSearch Exporter is healthy${NC}"
+            echo -e "${GREEN}✓ OpenSearch Exporter is healthy${NC}"
         else
-            echo -e "${RED}✗ ElasticSearch Exporter is not responding${NC}"
+            echo -e "${RED}✗ OpenSearch Exporter is not responding${NC}"
         fi
     fi
 

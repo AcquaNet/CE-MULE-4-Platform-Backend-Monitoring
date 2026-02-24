@@ -1,20 +1,20 @@
-# Prometheus Configuration for ELK Stack Monitoring
+# Prometheus Configuration for OpenSearch Stack Monitoring
 # This configuration is managed via .env file settings
 #
 # Environment variables used:
 # - PROMETHEUS_SCRAPE_INTERVAL: Default scrape interval (default: 15s)
 # - PROMETHEUS_EVALUATION_INTERVAL: Alert rule evaluation interval (default: 15s)
 # - MONITORING_ENABLED: Enable/disable all monitoring (default: false)
-# - ELASTICSEARCH_EXPORTER_ENABLED: Enable ElasticSearch metrics export (default: false)
+# - OPENSEARCH_EXPORTER_ENABLED: Enable OpenSearch metrics export (default: false)
 # - LOGSTASH_MONITORING_ENABLED: Enable Logstash monitoring API (default: false)
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'elk-stack-monitor'
+    monitor: 'opensearch-stack-monitor'
     environment: '${ENVIRONMENT:-development}'
-    cluster: '${ELASTIC_CLUSTER_NAME:-elk-cluster}'
+    cluster: '${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}'
 
 # Alertmanager configuration
 alerting:
@@ -59,13 +59,14 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 30s
 
-  # ElasticSearch metrics via Exporter
-  # Enabled when ELASTICSEARCH_EXPORTER_ENABLED=true
-  - job_name: 'elasticsearch-exporter'
+  # OpenSearch metrics via Exporter
+  # Uses opensearch-exporter which is compatible with OpenSearch
+  # Enabled when OPENSEARCH_EXPORTER_ENABLED=true
+  - job_name: 'opensearch-exporter'
     static_configs:
-      - targets: ['elasticsearch-exporter:9114']
+      - targets: ['opensearch-exporter:9114']
         labels:
-          service: 'elasticsearch'
+          service: 'opensearch'
           component: 'search'
     scrape_interval: 30s
     scrape_timeout: 10s
@@ -93,6 +94,27 @@ scrape_configs:
           component: 'alerting'
     metrics_path: '/metrics'
     scrape_interval: 30s
+
+  # Jaeger metrics (replaces APM Server)
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+        labels:
+          service: 'jaeger'
+          component: 'tracing'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # OpenSearch Dashboards health check
+  - job_name: 'opensearch-dashboards'
+    static_configs:
+      - targets: ['opensearch-dashboards:5601']
+        labels:
+          service: 'opensearch-dashboards'
+          component: 'ui'
+    metrics_path: '/dashboards/api/status'
+    scrape_interval: 60s
+    scrape_timeout: 10s
 
   # Node Exporter (if deployed separately for host metrics)
   # Uncomment to monitor host system metrics

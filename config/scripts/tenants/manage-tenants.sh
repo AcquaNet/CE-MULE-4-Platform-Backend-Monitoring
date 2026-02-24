@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Multi-Tenant Management for ElasticSearch Document-Level Security
+# Multi-Tenant Management for OpenSearch Document-Level Security
 #
 # This script manages tenant roles with DLS for log access isolation.
-# It integrates with both ElasticSearch and Keycloak for complete
+# It integrates with both OpenSearch and Keycloak for complete
 # tenant management.
 #
 # Usage:
@@ -44,9 +44,9 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 # Configuration
-ES_HOST="${ELASTICSEARCH_HOST:-http://localhost:9200}"
-ES_USER="${ELASTICSEARCH_USERNAME:-elastic}"
-ES_PASS="${ELASTIC_PASSWORD:-changeme}"
+ES_HOST="${OPENSEARCH_HOST:-https://localhost:9200}"
+ES_USER="${OPENSEARCH_USERNAME:-admin}"
+ES_PASS="${OPENSEARCH_ADMIN_PASSWORD:-admin}"
 KEYCLOAK_HOST="${KEYCLOAK_HOST:-http://localhost:8080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mule}"
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN_USER:-admin}"
@@ -55,7 +55,7 @@ KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 # Print banner
 print_banner() {
     echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}   Multi-Tenant Management for ElasticSearch DLS${NC}"
+    echo -e "${BLUE}   Multi-Tenant Management for OpenSearch DLS${NC}"
     echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
     echo ""
 }
@@ -93,25 +93,25 @@ validate_tenant_id() {
     fi
 }
 
-# Check ElasticSearch connectivity
+# Check OpenSearch connectivity
 check_es_connection() {
-    echo -e "${CYAN}Checking ElasticSearch connection...${NC}"
+    echo -e "${CYAN}Checking OpenSearch connection...${NC}"
     local response
     response=$(curl -s -o /dev/null -w "%{http_code}" -u "$ES_USER:$ES_PASS" "$ES_HOST/_cluster/health")
     if [ "$response" != "200" ]; then
-        echo -e "${RED}Error: Cannot connect to ElasticSearch at $ES_HOST${NC}"
+        echo -e "${RED}Error: Cannot connect to OpenSearch at $ES_HOST${NC}"
         echo "HTTP Status: $response"
         exit 1
     fi
-    echo -e "${GREEN}✓ Connected to ElasticSearch${NC}"
+    echo -e "${GREEN}✓ Connected to OpenSearch${NC}"
 }
 
-# Create tenant role in ElasticSearch with DLS
+# Create tenant role in OpenSearch with DLS
 create_es_role() {
     local tenant_id="$1"
     local role_name="tenant_${tenant_id}"
 
-    echo -e "${CYAN}Creating ElasticSearch role: $role_name${NC}"
+    echo -e "${CYAN}Creating OpenSearch role: $role_name${NC}"
 
     local role_body=$(cat <<EOF
 {
@@ -129,7 +129,7 @@ create_es_role() {
   ],
   "applications": [
     {
-      "application": "kibana-.kibana",
+      "application": "opensearch-dashboards",
       "privileges": [
         "feature_discover.read",
         "feature_dashboard.read",
@@ -170,7 +170,7 @@ create_es_user() {
     local password="$3"
     local role_name="tenant_${tenant_id}"
 
-    echo -e "${CYAN}Creating ElasticSearch user: $username${NC}"
+    echo -e "${CYAN}Creating OpenSearch user: $username${NC}"
 
     local user_body=$(cat <<EOF
 {
@@ -270,7 +270,7 @@ EOF
 
 # List all tenant roles
 list_tenants() {
-    echo -e "${CYAN}Fetching tenant roles from ElasticSearch...${NC}"
+    echo -e "${CYAN}Fetching tenant roles from OpenSearch...${NC}"
     echo ""
 
     local roles
@@ -330,7 +330,7 @@ delete_tenant() {
         fi
     fi
 
-    echo -e "${CYAN}Deleting ElasticSearch role: $role_name${NC}"
+    echo -e "${CYAN}Deleting OpenSearch role: $role_name${NC}"
 
     local response
     response=$(curl -s -X DELETE "$ES_HOST/_security/role/$role_name" -u "$ES_USER:$ES_PASS")
@@ -409,7 +409,7 @@ tenant_info() {
     echo ""
 
     # Role info
-    echo -e "${BLUE}ElasticSearch Role:${NC}"
+    echo -e "${BLUE}OpenSearch Role:${NC}"
     curl -s "$ES_HOST/_security/role/$role_name" -u "$ES_USER:$ES_PASS" | jq .
 
     echo ""
@@ -441,7 +441,7 @@ setup_multitenancy() {
     # Create index template
     echo -e "${CYAN}Creating index template with tenant_id mapping...${NC}"
 
-    local template_file="$PROJECT_ROOT/config/elasticsearch/templates/mule-logs-template.json"
+    local template_file="$PROJECT_ROOT/config/opensearch/templates/mule-logs-template.json"
     if [ -f "$template_file" ]; then
         curl -s -X PUT "$ES_HOST/_index_template/mule-logs-template" \
             -u "$ES_USER:$ES_PASS" \
@@ -455,7 +455,7 @@ setup_multitenancy() {
     # Create base tenant_user role
     echo -e "${CYAN}Creating base tenant_user role...${NC}"
 
-    local role_mappings="$PROJECT_ROOT/config/elasticsearch/role-mappings/tenant-role-mapping.json"
+    local role_mappings="$PROJECT_ROOT/config/opensearch/role-mappings/tenant-role-mapping.json"
     if [ -f "$role_mappings" ]; then
         local tenant_user_role=$(jq '.tenant_user_role' "$role_mappings")
         curl -s -X PUT "$ES_HOST/_security/role/tenant_user" \

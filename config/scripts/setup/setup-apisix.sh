@@ -84,39 +84,39 @@ curl -s -X PUT "${APISIX_ADMIN_URL}/upstreams/1" \
   }'
 
 #
-# 2. Create Kibana Routes
+# 2. Create OpenSearch Dashboards Routes
 #
-echo "Creating Kibana routes..."
+echo "Creating OpenSearch Dashboards routes..."
 
-# Redirect /kibana to /kibana/
-curl -s -X PUT "${APISIX_ADMIN_URL}/routes/kibana-redirect" \
+# Redirect /dashboards to /dashboards/
+curl -s -X PUT "${APISIX_ADMIN_URL}/routes/dashboards-redirect" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "uri": "/kibana",
-    "name": "kibana-redirect",
-    "desc": "Redirect /kibana to /kibana/",
+    "uri": "/dashboards",
+    "name": "dashboards-redirect",
+    "desc": "Redirect /dashboards to /dashboards/",
     "priority": 10,
     "plugins": {
       "redirect": {
-        "uri": "/kibana/",
+        "uri": "/dashboards/",
         "ret_code": 301
       }
     }
   }'
 
-# Main Kibana route
-curl -s -X PUT "${APISIX_ADMIN_URL}/routes/kibana-proxy" \
+# Main OpenSearch Dashboards route
+curl -s -X PUT "${APISIX_ADMIN_URL}/routes/dashboards-proxy" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "uri": "/kibana/*",
-    "name": "kibana-proxy",
-    "desc": "Kibana web UI and API proxy",
+    "uri": "/dashboards/*",
+    "name": "dashboards-proxy",
+    "desc": "OpenSearch Dashboards web UI and API proxy",
     "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
     "upstream": {
       "nodes": {
-        "kibana:5601": 1
+        "dashboards:5601": 1
       },
       "type": "roundrobin",
       "timeout": {
@@ -127,7 +127,7 @@ curl -s -X PUT "${APISIX_ADMIN_URL}/routes/kibana-proxy" \
     },
     "plugins": {
       "proxy-rewrite": {
-        "regex_uri": ["^/kibana(.*)", "$1"]
+        "regex_uri": ["^/dashboards(.*)", "$1"]
       },
       "cors": {
         "allow_origins": "**",
@@ -138,20 +138,20 @@ curl -s -X PUT "${APISIX_ADMIN_URL}/routes/kibana-proxy" \
   }'
 
 #
-# 3. Create ElasticSearch Routes
+# 3. Create OpenSearch Routes
 #
-echo "Creating ElasticSearch routes..."
-curl -s -X PUT "${APISIX_ADMIN_URL}/routes/elasticsearch-api" \
+echo "Creating OpenSearch routes..."
+curl -s -X PUT "${APISIX_ADMIN_URL}/routes/opensearch-api" \
   -H "X-API-KEY: ${ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "uri": "/elasticsearch/*",
-    "name": "elasticsearch-api",
-    "desc": "ElasticSearch API proxy",
+    "uri": "/opensearch/*",
+    "name": "opensearch-api",
+    "desc": "OpenSearch API proxy",
     "methods": ["GET", "POST", "PUT", "DELETE", "HEAD"],
     "upstream": {
       "nodes": {
-        "elasticsearch:9200": 1
+        "opensearch:9200": 1
       },
       "type": "roundrobin",
       "timeout": {
@@ -162,7 +162,7 @@ curl -s -X PUT "${APISIX_ADMIN_URL}/routes/elasticsearch-api" \
     },
     "plugins": {
       "proxy-rewrite": {
-        "regex_uri": ["^/elasticsearch(.*)", "$1"]
+        "regex_uri": ["^/opensearch(.*)", "$1"]
       }
     }
   }'
@@ -466,8 +466,8 @@ echo "Available endpoints:"
 echo "  - APISIX Dashboard: http://your-server:9080/ (root path)"
 echo "  - Grafana:          http://your-server:9080/grafana"
 echo "  - Prometheus:       http://your-server:9080/prometheus"
-echo "  - Kibana:           http://your-server:9080/kibana"
-echo "  - ElasticSearch:    http://your-server:9080/elasticsearch"
+echo "  - OpenSearch Dashboards:           http://your-server:9080/dashboards"
+echo "  - OpenSearch:    http://your-server:9080/opensearch"
 echo "  - Logstash API:     http://your-server:9080/logstash"
 echo "  - APM Server:       http://your-server:9080/apm-server"
 echo "  - Mule API:         http://your-server:9080/api/v1/status"

@@ -2,7 +2,7 @@
 #
 # Setup Automated Backup Cron Jobs
 #
-# This script sets up cron jobs for automated ElasticSearch backups based on
+# This script sets up cron jobs for automated OpenSearch backups based on
 # the schedule defined in .env file.
 #
 # Usage:
@@ -56,7 +56,7 @@ set +a
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   Setup Automated ElasticSearch Backups${NC}"
+echo -e "${BLUE}   Setup Automated OpenSearch Backups${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -76,8 +76,8 @@ SCHEDULE="${BACKUP_SCHEDULE:-0 2 * * *}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 
 # Cron job identifiers (for easy removal)
-BACKUP_MARKER="# ElasticSearch Backup - Managed by setup-backup-cron.sh"
-CLEANUP_MARKER="# ElasticSearch Cleanup - Managed by setup-backup-cron.sh"
+BACKUP_MARKER="# OpenSearch Backup - Managed by setup-backup-cron.sh"
+CLEANUP_MARKER="# OpenSearch Cleanup - Managed by setup-backup-cron.sh"
 
 # Remove existing cron jobs if requested
 if [ "$REMOVE" = true ]; then

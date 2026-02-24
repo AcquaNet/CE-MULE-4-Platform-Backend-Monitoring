@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Configure ElasticSearch Snapshot Repository
+# Configure OpenSearch Snapshot Repository
 #
-# This script configures the ElasticSearch snapshot repository based on settings
+# This script configures the OpenSearch snapshot repository based on settings
 # in the .env file. It supports filesystem, S3, Azure, and GCS repositories.
 #
 # Usage:
@@ -66,7 +66,7 @@ set +a
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ElasticSearch Snapshot Repository Configuration${NC}"
+echo -e "${BLUE}   OpenSearch Snapshot Repository Configuration${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -81,25 +81,25 @@ if [ "${BACKUP_ENABLED:-true}" != "true" ]; then
     fi
 fi
 
-# ElasticSearch connection details
-ES_HOST="${ES_HOST:-http://localhost:9080/elasticsearch}"
+# OpenSearch connection details
+ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
 ES_USER="${ES_USER:-elastic}"
-ES_PASSWORD="${ELASTIC_PASSWORD}"
+ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 REPO_TYPE="${BACKUP_REPOSITORY_TYPE:-fs}"
 
-# Check ElasticSearch connectivity
-echo -e "${GREEN}Checking ElasticSearch connectivity...${NC}"
+# Check OpenSearch connectivity
+echo -e "${GREEN}Checking OpenSearch connectivity...${NC}"
 if ! curl -s -u "${ES_USER}:${ES_PASSWORD}" "${ES_HOST}/_cluster/health" > /dev/null 2>&1; then
-    echo -e "${RED}Error: Cannot connect to ElasticSearch at ${ES_HOST}${NC}"
+    echo -e "${RED}Error: Cannot connect to OpenSearch at ${ES_HOST}${NC}"
     echo ""
     echo "Please ensure:"
-    echo "  1. ElasticSearch is running: docker-compose ps elasticsearch"
-    echo "  2. ELASTIC_PASSWORD is set correctly in .env"
-    echo "  3. ES_HOST is correct (default: http://localhost:9080/elasticsearch)"
+    echo "  1. OpenSearch is running: docker-compose ps opensearch"
+    echo "  2. OPENSEARCH_ADMIN_PASSWORD is set correctly in .env"
+    echo "  3. ES_HOST is correct (default: http://localhost:9080/opensearch)"
     exit 1
 fi
-echo -e "${GREEN}✓ Connected to ElasticSearch${NC}"
+echo -e "${GREEN}✓ Connected to OpenSearch${NC}"
 echo ""
 
 # Check if repository already exists
@@ -125,7 +125,7 @@ echo -e "${GREEN}Configuring ${REPO_TYPE} repository...${NC}"
 case "$REPO_TYPE" in
     fs)
         # Filesystem repository
-        REPO_PATH="${SNAPSHOT_REPOSITORY_PATH:-/mnt/elasticsearch-backups}"
+        REPO_PATH="${SNAPSHOT_REPOSITORY_PATH:-/mnt/opensearch-backups}"
         COMPRESS="${BACKUP_COMPRESS:-true}"
 
         echo "  Repository: ${REPO_NAME}"
@@ -156,7 +156,7 @@ case "$REPO_TYPE" in
 
         S3_BUCKET="${AWS_S3_BUCKET}"
         S3_REGION="${AWS_S3_REGION:-us-east-1}"
-        S3_BASE_PATH="${AWS_S3_BASE_PATH:-elasticsearch-backups}"
+        S3_BASE_PATH="${AWS_S3_BASE_PATH:-opensearch-backups}"
         S3_STORAGE_CLASS="${AWS_S3_STORAGE_CLASS:-STANDARD_IA}"
         COMPRESS="${BACKUP_COMPRESS:-true}"
 
@@ -226,7 +226,7 @@ case "$REPO_TYPE" in
         fi
 
         BUCKET="${GCS_BUCKET}"
-        BASE_PATH="${GCS_BASE_PATH:-elasticsearch-backups}"
+        BASE_PATH="${GCS_BASE_PATH:-opensearch-backups}"
         COMPRESS="${BACKUP_COMPRESS:-true}"
 
         echo "  Repository: ${REPO_NAME}"

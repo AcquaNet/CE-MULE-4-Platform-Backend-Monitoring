@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Clean Up Old ElasticSearch Snapshots
+# Clean Up Old OpenSearch Snapshots
 #
 # This script removes old snapshots based on retention policy defined in .env
 # Can be run manually or via cron for automated cleanup.
@@ -54,10 +54,10 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# ElasticSearch connection details
-ES_HOST="${ES_HOST:-http://localhost:9080/elasticsearch}"
+# OpenSearch connection details
+ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
 ES_USER="${ES_USER:-elastic}"
-ES_PASSWORD="${ELASTIC_PASSWORD}"
+ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
 # Retention settings
@@ -66,7 +66,7 @@ MAX_COUNT="${BACKUP_MAX_COUNT:-50}"
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ElasticSearch Snapshot Cleanup${NC}"
+echo -e "${BLUE}   OpenSearch Snapshot Cleanup${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -75,13 +75,13 @@ if [ "$DRY_RUN" = true ]; then
     echo ""
 fi
 
-# Check ElasticSearch connectivity
-echo -e "${GREEN}Checking ElasticSearch connectivity...${NC}"
+# Check OpenSearch connectivity
+echo -e "${GREEN}Checking OpenSearch connectivity...${NC}"
 if ! curl -s -u "${ES_USER}:${ES_PASSWORD}" "${ES_HOST}/_cluster/health" > /dev/null 2>&1; then
-    echo -e "${RED}Error: Cannot connect to ElasticSearch at ${ES_HOST}${NC}"
+    echo -e "${RED}Error: Cannot connect to OpenSearch at ${ES_HOST}${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Connected to ElasticSearch${NC}"
+echo -e "${GREEN}✓ Connected to OpenSearch${NC}"
 echo ""
 
 # Check if repository exists
@@ -242,7 +242,7 @@ if [ "$DRY_RUN" != true ] && [ "$DELETED" -gt 0 ]; then
     if [ "${BACKUP_NOTIFICATIONS_ENABLED:-false}" = "true" ] && [ -n "${BACKUP_WEBHOOK_URL}" ]; then
         NOTIFICATION_PAYLOAD=$(cat <<EOF
 {
-  "text": "🗑️ ElasticSearch Backup Cleanup",
+  "text": "🗑️ OpenSearch Backup Cleanup",
   "attachments": [
     {
       "color": "warning",

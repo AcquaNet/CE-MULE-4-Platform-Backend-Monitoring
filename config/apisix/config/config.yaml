@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-# APISIX Configuration for ELK Stack and Mule Platform Gateway
+# APISIX Configuration for OpenSearch Stack and Mule Platform Gateway
 
 apisix:
   node_listen: 9080              # HTTP port
@@ -83,6 +83,9 @@ nginx_config:
     # Buffer settings
     client_max_body_size: 50m
     client_body_buffer_size: 512k
+
+    # Disable SSL verification for HTTPS upstreams (required for self-signed certs)
+    proxy_ssl_verify: "off"
 
   # Enable stream (TCP/UDP) proxy for Logstash and other services
   stream:
@@ -157,7 +160,7 @@ plugins:
   - clickhouse-logger
   - tencent-cloud-cls
   - loki-logger
-  - elasticsearch-logger
+  - opensearch-logger
   - opentelemetry
   - inspect
   - example-plugin

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Setup Multi-Tenancy for ElasticSearch with Document-Level Security
+# Setup Multi-Tenancy for OpenSearch with Document-Level Security
 #
 # This script performs the complete initial setup for multi-tenancy:
 # 1. Creates ES index templates with tenant_id mapping
@@ -13,7 +13,7 @@
 #   ./setup-multitenancy.sh [--skip-keycloak] [--dry-run]
 #
 # Prerequisites:
-#   - ElasticSearch must be running with X-Pack Security enabled
+#   - OpenSearch must be running with OpenSearch Security enabled
 #   - Keycloak must be running (unless --skip-keycloak is used)
 #   - .env file with proper credentials
 #
@@ -40,9 +40,9 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 # Configuration
-ES_HOST="${ELASTICSEARCH_HOST:-http://localhost:9200}"
-ES_USER="${ELASTICSEARCH_USERNAME:-elastic}"
-ES_PASS="${ELASTIC_PASSWORD:-changeme}"
+ES_HOST="${OPENSEARCH_HOST:-http://localhost:9200}"
+ES_USER="${OPENSEARCH_USERNAME:-elastic}"
+ES_PASS="${OPENSEARCH_ADMIN_PASSWORD:-changeme}"
 KEYCLOAK_HOST="${KEYCLOAK_HOST:-http://localhost:8080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mule}"
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN_USER:-admin}"
@@ -74,7 +74,7 @@ done
 
 # Banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   Multi-Tenancy Setup for ElasticSearch DLS${NC}"
+echo -e "${BLUE}   Multi-Tenancy Setup for OpenSearch DLS${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -83,20 +83,20 @@ if [ "$DRY_RUN" = true ]; then
     echo ""
 fi
 
-# Step 1: Check ElasticSearch connectivity
-echo -e "${CYAN}Step 1: Checking ElasticSearch connectivity...${NC}"
+# Step 1: Check OpenSearch connectivity
+echo -e "${CYAN}Step 1: Checking OpenSearch connectivity...${NC}"
 ES_HEALTH=$(curl -s -u "$ES_USER:$ES_PASS" "$ES_HOST/_cluster/health" 2>/dev/null)
 if [ $? -ne 0 ] || [ -z "$ES_HEALTH" ]; then
-    echo -e "${RED}Error: Cannot connect to ElasticSearch at $ES_HOST${NC}"
+    echo -e "${RED}Error: Cannot connect to OpenSearch at $ES_HOST${NC}"
     exit 1
 fi
 ES_STATUS=$(echo "$ES_HEALTH" | jq -r '.status')
-echo -e "${GREEN}✓ ElasticSearch is $ES_STATUS${NC}"
+echo -e "${GREEN}✓ OpenSearch is $ES_STATUS${NC}"
 echo ""
 
 # Step 2: Create index template
 echo -e "${CYAN}Step 2: Creating index template with tenant_id mapping...${NC}"
-TEMPLATE_FILE="$PROJECT_ROOT/config/elasticsearch/templates/mule-logs-template.json"
+TEMPLATE_FILE="$PROJECT_ROOT/config/opensearch/templates/mule-logs-template.json"
 
 if [ -f "$TEMPLATE_FILE" ]; then
     if [ "$DRY_RUN" = false ]; then
@@ -136,7 +136,7 @@ TENANT_USER_ROLE='{
   ],
   "applications": [
     {
-      "application": "kibana-.kibana",
+      "application": "opensearch-dashboards",
       "privileges": [
         "feature_discover.read",
         "feature_dashboard.read",
@@ -177,7 +177,7 @@ TENANT_ADMIN_ROLE='{
   ],
   "applications": [
     {
-      "application": "kibana-.kibana",
+      "application": "opensearch-dashboards",
       "privileges": [
         "feature_discover.all",
         "feature_dashboard.all",
@@ -282,7 +282,7 @@ DEFAULT_TENANT_ROLE='{
   ],
   "applications": [
     {
-      "application": "kibana-.kibana",
+      "application": "opensearch-dashboards",
       "privileges": [
         "feature_discover.read",
         "feature_dashboard.read"
@@ -338,6 +338,6 @@ echo ""
 echo "  3. Verify tenant isolation:"
 echo "     ${BLUE}./config/scripts/tenants/manage-tenants.sh verify <tenant_id>${NC}"
 echo ""
-echo "  4. For Kibana OIDC with Keycloak, update docker-compose.yml"
+echo "  4. For OpenSearch Dashboards OIDC with Keycloak, update docker-compose.yml"
 echo "     See docs/MULTITENANCY_SETUP.md for details"
 echo ""

@@ -1,0 +1,335 @@
+# Prometheus Alert Rules for OpenSearch Stack
+# This file defines alert conditions for monitoring the OpenSearch, Logstash, OpenSearch Dashboards, Jaeger stack
+#
+# Alert severity levels:
+# - critical: Immediate action required, service outage or data loss
+# - warning: Attention needed, potential issues
+# - info: Informational, for awareness
+
+groups:
+  # OpenSearch Cluster Health Alerts
+  - name: opensearch_cluster
+    interval: 60s
+    rules:
+      - alert: OpenSearchClusterDown
+        expr: up{job="opensearch-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opensearch
+          component: cluster
+        annotations:
+          summary: "OpenSearch cluster is down"
+          description: "OpenSearch cluster has been down for more than 5 minutes. Cluster: {{ $labels.cluster }}"
+          dashboard_url: "http://localhost:9080/grafana/d/opensearch/opensearch-overview"
+          dashboards_url: "http://localhost:9080/dashboards"
+
+      - alert: OpenSearchClusterHealthYellow
+        expr: opensearch_cluster_health_status{color="yellow"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          service: opensearch
+          component: cluster
+        annotations:
+          summary: "OpenSearch cluster health is YELLOW"
+          description: "OpenSearch cluster {{ $labels.cluster }} has been in YELLOW state for more than 10 minutes. Some replicas are not allocated."
+          dashboard_url: "http://localhost:9080/grafana/d/opensearch/opensearch-overview"
+
+      - alert: OpenSearchClusterHealthRed
+        expr: opensearch_cluster_health_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: opensearch
+          component: cluster
+        annotations:
+          summary: "OpenSearch cluster health is RED"
+          description: "OpenSearch cluster {{ $labels.cluster }} is in RED state. Data loss may have occurred!"
+          dashboard_url: "http://localhost:9080/grafana/d/opensearch/opensearch-overview"
+
+      - alert: OpenSearchNodesCountChanged
+        expr: changes(opensearch_cluster_health_number_of_nodes[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: opensearch
+          component: cluster
+        annotations:
+          summary: "OpenSearch cluster node count changed"
+          description: "The number of nodes in cluster {{ $labels.cluster }} has changed. Current: {{ $value }}"
+
+  # OpenSearch Resource Alerts
+  - name: opensearch_resources
+    interval: 60s
+    rules:
+      - alert: OpenSearchDiskSpaceHigh
+        expr: (opensearch_filesystem_data_available_bytes / opensearch_filesystem_data_size_bytes * 100) < 15
+        for: 5m
+        labels:
+          severity: critical
+          service: opensearch
+          component: storage
+        annotations:
+          summary: "OpenSearch disk space critically low"
+          description: "OpenSearch node {{ $labels.node }} has less than 15% disk space available. Current: {{ $value | humanizePercentage }}"
+
+      - alert: OpenSearchDiskSpaceWarning
+        expr: (opensearch_filesystem_data_available_bytes / opensearch_filesystem_data_size_bytes * 100) < 30
+        for: 10m
+        labels:
+          severity: warning
+          service: opensearch
+          component: storage
+        annotations:
+          summary: "OpenSearch disk space running low"
+          description: "OpenSearch node {{ $labels.node }} has less than 30% disk space available. Current: {{ $value | humanizePercentage }}"
+
+      - alert: OpenSearchJVMHeapUsageHigh
+        expr: (opensearch_jvm_memory_used_bytes{area="heap"} / opensearch_jvm_memory_max_bytes{area="heap"} * 100) > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: opensearch
+          component: jvm
+        annotations:
+          summary: "OpenSearch JVM heap usage critically high"
+          description: "OpenSearch node {{ $labels.node }} JVM heap usage is above 90%. Current: {{ $value | humanizePercentage }}"
+
+      - alert: OpenSearchJVMHeapUsageWarning
+        expr: (opensearch_jvm_memory_used_bytes{area="heap"} / opensearch_jvm_memory_max_bytes{area="heap"} * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: opensearch
+          component: jvm
+        annotations:
+          summary: "OpenSearch JVM heap usage high"
+          description: "OpenSearch node {{ $labels.node }} JVM heap usage is above 85%. Current: {{ $value | humanizePercentage }}"
+
+      - alert: OpenSearchGarbageCollectionDuration
+        expr: rate(opensearch_jvm_gc_collection_seconds_sum[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: opensearch
+          component: jvm
+        annotations:
+          summary: "OpenSearch GC taking too long"
+          description: "OpenSearch node {{ $labels.node }} is spending {{ $value | humanizePercentage }} of time in GC"
+
+  # OpenSearch Index Alerts
+  - name: opensearch_indices
+    interval: 300s
+    rules:
+      - alert: OpenSearchUnassignedShards
+        expr: opensearch_cluster_health_unassigned_shards > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: opensearch
+          component: indices
+        annotations:
+          summary: "OpenSearch has unassigned shards"
+          description: "Cluster {{ $labels.cluster }} has {{ $value }} unassigned shards. Check cluster health."
+
+      - alert: OpenSearchRelocatingShards
+        expr: opensearch_cluster_health_relocating_shards > 0
+        for: 30m
+        labels:
+          severity: info
+          service: opensearch
+          component: indices
+        annotations:
+          summary: "OpenSearch is relocating shards"
+          description: "Cluster {{ $labels.cluster }} has been relocating {{ $value }} shards for more than 30 minutes."
+
+      - alert: OpenSearchInitializingShards
+        expr: opensearch_cluster_health_initializing_shards > 0
+        for: 30m
+        labels:
+          severity: info
+          service: opensearch
+          component: indices
+        annotations:
+          summary: "OpenSearch is initializing shards"
+          description: "Cluster {{ $labels.cluster }} has been initializing {{ $value }} shards for more than 30 minutes."
+
+  # APISIX Gateway Alerts
+  - name: apisix_gateway
+    interval: 60s
+    rules:
+      - alert: APISIXDown
+        expr: up{job="apisix"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX API Gateway is down"
+          description: "APISIX gateway has been down for more than 1 minute. All API traffic is affected."
+
+      - alert: APISIXHighLatency
+        expr: histogram_quantile(0.95, rate(apisix_http_latency_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX request latency high"
+          description: "95th percentile latency is {{ $value }}ms (threshold: 1000ms)"
+
+      - alert: APISIXHighErrorRate
+        expr: rate(apisix_http_status{code=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: apisix
+          component: gateway
+        annotations:
+          summary: "APISIX 5xx error rate high"
+          description: "Error rate is {{ $value | humanizePercentage }} for route {{ $labels.route }}"
+
+  # Logstash Alerts
+  - name: logstash_pipeline
+    interval: 60s
+    rules:
+      - alert: LogstashDown
+        expr: up{job="logstash"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: logstash
+          component: pipeline
+        annotations:
+          summary: "Logstash is down"
+          description: "Logstash has been down for more than 5 minutes. Log ingestion is stopped."
+
+      - alert: LogstashPipelineFailures
+        expr: rate(logstash_pipeline_events_out{pipeline="main"}[5m]) == 0 and rate(logstash_pipeline_events_in{pipeline="main"}[5m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+          service: logstash
+          component: pipeline
+        annotations:
+          summary: "Logstash pipeline not processing events"
+          description: "Logstash is receiving events but not outputting any. Check pipeline configuration."
+
+  # OpenSearch Dashboards Alerts (replaces OpenSearch Dashboards)
+  - name: opensearch_dashboards_service
+    interval: 60s
+    rules:
+      - alert: OpenSearchDashboardsDown
+        expr: up{job="opensearch-dashboards"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: opensearch-dashboards
+          component: ui
+        annotations:
+          summary: "OpenSearch Dashboards is down"
+          description: "OpenSearch Dashboards has been down for more than 5 minutes. Dashboard access is unavailable."
+
+  # Jaeger Alerts (replaces APM Server)
+  - name: jaeger_tracing
+    interval: 60s
+    rules:
+      - alert: JaegerDown
+        expr: up{job="jaeger"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: jaeger
+          component: tracing
+        annotations:
+          summary: "Jaeger is down"
+          description: "Jaeger has been down for more than 5 minutes. Distributed tracing is unavailable."
+          jaeger_url: "http://localhost:16686/jaeger/"
+
+      - alert: JaegerCollectorHighLatency
+        expr: histogram_quantile(0.95, rate(jaeger_collector_save_latency_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: jaeger
+          component: collector
+        annotations:
+          summary: "Jaeger collector latency high"
+          description: "95th percentile collector save latency is {{ $value }}ms"
+
+      - alert: JaegerSpanDropped
+        expr: rate(jaeger_collector_spans_dropped_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: jaeger
+          component: collector
+        annotations:
+          summary: "Jaeger is dropping spans"
+          description: "Jaeger collector is dropping {{ $value }} spans per second"
+
+  # Prometheus & Grafana Alerts
+  - name: monitoring_stack
+    interval: 60s
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: prometheus
+          component: monitoring
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus has been down for more than 5 minutes. Monitoring is unavailable."
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: grafana
+          component: visualization
+        annotations:
+          summary: "Grafana is down"
+          description: "Grafana has been down for more than 5 minutes. Dashboards are unavailable."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: alertmanager
+          component: alerting
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager has been down for more than 5 minutes. Alert notifications are not being sent!"
+
+  # Backup Alerts
+  - name: backup_monitoring
+    interval: 3600s  # Check hourly
+    rules:
+      - alert: OpenSearchBackupFailed
+        expr: opensearch_snapshot_stats_snapshot_failed_shards_total > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opensearch
+          component: backup
+        annotations:
+          summary: "OpenSearch snapshot failed"
+          description: "Snapshot {{ $labels.snapshot }} in repository {{ $labels.repository }} has {{ $value }} failed shards."
+
+      - alert: OpenSearchNoRecentBackup
+        expr: time() - opensearch_snapshot_stats_snapshot_end_time_seconds > 86400
+        for: 1h
+        labels:
+          severity: warning
+          service: opensearch
+          component: backup
+        annotations:
+          summary: "No recent OpenSearch backup"
+          description: "Last successful backup was {{ $value | humanizeDuration }} ago. Check backup cron job."

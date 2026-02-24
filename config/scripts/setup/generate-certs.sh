@@ -15,7 +15,7 @@
 #   - ca/           - Certificate Authority (REQUIRED)
 #
 # Optional Certificates (certs/extra/):
-#   - elasticsearch/, kibana/, logstash/, prometheus/, grafana/, alertmanager/
+#   - opensearch/, dashboards/, logstash/, prometheus/, grafana/, alertmanager/
 #   - For compliance requirements (HIPAA, PCI-DSS, zero-trust architecture)
 #
 # Usage:
@@ -109,7 +109,7 @@ fi
 echo -e "${GREEN}Creating certificate directory structure...${NC}"
 mkdir -p "$CERTS_DIR"/{ca,apisix,apm-server}
 if [ "$ACTIVE_ONLY" != true ]; then
-    mkdir -p "$CERTS_DIR/extra"/{elasticsearch,kibana,logstash,prometheus,grafana,alertmanager}
+    mkdir -p "$CERTS_DIR/extra"/{opensearch,dashboards,logstash,prometheus,grafana,alertmanager}
 fi
 echo -e "${GREEN}✓ Directory structure created${NC}"
 echo ""
@@ -128,7 +128,7 @@ else
     # Generate CA certificate
     openssl req -new -x509 -days "$DAYS" -key "$CERTS_DIR/ca/ca.key" \
         -out "$CERTS_DIR/ca/ca.crt" \
-        -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=ELK-Stack-CA"
+        -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=OpenSearch-Stack-CA"
 
     echo -e "${GREEN}✓ CA certificate generated${NC}"
 fi
@@ -291,12 +291,12 @@ echo -e "${YELLOW}Location: certs/extra/${NC}"
 echo ""
 
 # ========================================
-# Generate ElasticSearch Certificates (EXTRA)
+# Generate OpenSearch Certificates (EXTRA)
 # ========================================
-echo -e "${GREEN}[Extra 1/6] Generating ElasticSearch certificates...${NC}"
+echo -e "${GREEN}[Extra 1/6] Generating OpenSearch certificates...${NC}"
 
-# Create ElasticSearch config for SAN
-cat > "$CERTS_DIR/extra/elasticsearch/elasticsearch.cnf" <<EOF
+# Create OpenSearch config for SAN
+cat > "$CERTS_DIR/extra/opensearch/opensearch.cnf" <<EOF
 [req]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -308,7 +308,7 @@ ST = State
 L = City
 O = Organization
 OU = IT
-CN = elasticsearch
+CN = opensearch
 
 [v3_req]
 keyUsage = keyEncipherment, dataEncipherment
@@ -316,44 +316,44 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = elasticsearch
+DNS.1 = opensearch
 DNS.2 = localhost
 DNS.3 = ${DOMAIN}
 IP.1 = 127.0.0.1
 IP.2 = 172.42.0.10
 EOF
 
-# Generate ElasticSearch private key
-openssl genrsa -out "$CERTS_DIR/extra/elasticsearch/elasticsearch.key" 2048
+# Generate OpenSearch private key
+openssl genrsa -out "$CERTS_DIR/extra/opensearch/opensearch.key" 2048
 
-# Generate ElasticSearch certificate signing request (CSR)
-openssl req -new -key "$CERTS_DIR/extra/elasticsearch/elasticsearch.key" \
-    -out "$CERTS_DIR/extra/elasticsearch/elasticsearch.csr" \
-    -config "$CERTS_DIR/extra/elasticsearch/elasticsearch.cnf"
+# Generate OpenSearch certificate signing request (CSR)
+openssl req -new -key "$CERTS_DIR/extra/opensearch/opensearch.key" \
+    -out "$CERTS_DIR/extra/opensearch/opensearch.csr" \
+    -config "$CERTS_DIR/extra/opensearch/opensearch.cnf"
 
-# Sign ElasticSearch certificate with CA
-openssl x509 -req -in "$CERTS_DIR/extra/elasticsearch/elasticsearch.csr" \
+# Sign OpenSearch certificate with CA
+openssl x509 -req -in "$CERTS_DIR/extra/opensearch/opensearch.csr" \
     -CA "$CERTS_DIR/ca/ca.crt" -CAkey "$CERTS_DIR/ca/ca.key" \
-    -CAcreateserial -out "$CERTS_DIR/extra/elasticsearch/elasticsearch.crt" \
+    -CAcreateserial -out "$CERTS_DIR/extra/opensearch/opensearch.crt" \
     -days "$DAYS" -extensions v3_req \
-    -extfile "$CERTS_DIR/extra/elasticsearch/elasticsearch.cnf"
+    -extfile "$CERTS_DIR/extra/opensearch/opensearch.cnf"
 
 # Create PKCS#12 bundle (for Elastic)
-openssl pkcs12 -export -out "$CERTS_DIR/extra/elasticsearch/elasticsearch.p12" \
-    -in "$CERTS_DIR/extra/elasticsearch/elasticsearch.crt" \
-    -inkey "$CERTS_DIR/extra/elasticsearch/elasticsearch.key" \
+openssl pkcs12 -export -out "$CERTS_DIR/extra/opensearch/opensearch.p12" \
+    -in "$CERTS_DIR/extra/opensearch/opensearch.crt" \
+    -inkey "$CERTS_DIR/extra/opensearch/opensearch.key" \
     -certfile "$CERTS_DIR/ca/ca.crt" \
-    -name "elasticsearch" -passout pass:changeit
+    -name "opensearch" -passout pass:changeit
 
-echo -e "${GREEN}✓ ElasticSearch certificates generated${NC}"
+echo -e "${GREEN}✓ OpenSearch certificates generated${NC}"
 echo ""
 
 # ========================================
-# Generate Kibana Certificates (EXTRA)
+# Generate OpenSearch Dashboards Certificates (EXTRA)
 # ========================================
-echo -e "${GREEN}[Extra 2/6] Generating Kibana certificates...${NC}"
+echo -e "${GREEN}[Extra 2/6] Generating OpenSearch Dashboards certificates...${NC}"
 
-cat > "$CERTS_DIR/extra/kibana/kibana.cnf" <<EOF
+cat > "$CERTS_DIR/extra/dashboards/dashboards.cnf" <<EOF
 [req]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -365,7 +365,7 @@ ST = State
 L = City
 O = Organization
 OU = IT
-CN = kibana
+CN = dashboards
 
 [v3_req]
 keyUsage = keyEncipherment, dataEncipherment
@@ -373,26 +373,26 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = kibana
+DNS.1 = dashboards
 DNS.2 = localhost
 DNS.3 = ${DOMAIN}
 IP.1 = 127.0.0.1
 IP.2 = 172.42.0.12
 EOF
 
-openssl genrsa -out "$CERTS_DIR/extra/kibana/kibana.key" 2048
+openssl genrsa -out "$CERTS_DIR/extra/dashboards/dashboards.key" 2048
 
-openssl req -new -key "$CERTS_DIR/extra/kibana/kibana.key" \
-    -out "$CERTS_DIR/extra/kibana/kibana.csr" \
-    -config "$CERTS_DIR/extra/kibana/kibana.cnf"
+openssl req -new -key "$CERTS_DIR/extra/dashboards/dashboards.key" \
+    -out "$CERTS_DIR/extra/dashboards/dashboards.csr" \
+    -config "$CERTS_DIR/extra/dashboards/dashboards.cnf"
 
-openssl x509 -req -in "$CERTS_DIR/extra/kibana/kibana.csr" \
+openssl x509 -req -in "$CERTS_DIR/extra/dashboards/dashboards.csr" \
     -CA "$CERTS_DIR/ca/ca.crt" -CAkey "$CERTS_DIR/ca/ca.key" \
-    -CAcreateserial -out "$CERTS_DIR/extra/kibana/kibana.crt" \
+    -CAcreateserial -out "$CERTS_DIR/extra/dashboards/dashboards.crt" \
     -days "$DAYS" -extensions v3_req \
-    -extfile "$CERTS_DIR/extra/kibana/kibana.cnf"
+    -extfile "$CERTS_DIR/extra/dashboards/dashboards.cnf"
 
-echo -e "${GREEN}✓ Kibana certificates generated${NC}"
+echo -e "${GREEN}✓ OpenSearch Dashboards certificates generated${NC}"
 echo ""
 
 # ========================================
@@ -620,8 +620,8 @@ echo "    APISIX Gateway: $CERTS_DIR/apisix/"
 echo "    APM Server: $CERTS_DIR/apm-server/"
 echo ""
 echo "  Optional Certificates (End-to-End Encryption):"
-echo "    ElasticSearch: $CERTS_DIR/extra/elasticsearch/"
-echo "    Kibana: $CERTS_DIR/extra/kibana/"
+echo "    OpenSearch: $CERTS_DIR/extra/opensearch/"
+echo "    OpenSearch Dashboards: $CERTS_DIR/extra/dashboards/"
 echo "    Logstash: $CERTS_DIR/extra/logstash/"
 echo "    Prometheus: $CERTS_DIR/extra/prometheus/"
 echo "    Grafana: $CERTS_DIR/extra/grafana/"
@@ -666,7 +666,7 @@ echo ""
 echo -e "${YELLOW}Trust CA Certificate (Optional):${NC}"
 echo ""
 echo "  Linux:"
-echo "    ${BLUE}sudo cp $CERTS_DIR/ca/ca.crt /usr/local/share/ca-certificates/elk-ca.crt${NC}"
+echo "    ${BLUE}sudo cp $CERTS_DIR/ca/ca.crt /usr/local/share/ca-certificates/opensearch-ca.crt${NC}"
 echo "    ${BLUE}sudo update-ca-certificates${NC}"
 echo ""
 echo "  macOS:"
@@ -706,14 +706,14 @@ Optional Certificates (End-to-End Encryption):
   Located in: certs/extra/
   For: HIPAA, PCI-DSS, zero-trust architecture
 
-  ElasticSearch:
-    - extra/elasticsearch/elasticsearch.crt
-    - extra/elasticsearch/elasticsearch.key
-    - extra/elasticsearch/elasticsearch.p12 (PKCS#12, password: changeit)
+  OpenSearch:
+    - extra/opensearch/opensearch.crt
+    - extra/opensearch/opensearch.key
+    - extra/opensearch/opensearch.p12 (PKCS#12, password: changeit)
 
-  Kibana:
-    - extra/kibana/kibana.crt
-    - extra/kibana/kibana.key
+  OpenSearch Dashboards:
+    - extra/dashboards/dashboards.crt
+    - extra/dashboards/dashboards.key
 
   Logstash:
     - extra/logstash/logstash.crt

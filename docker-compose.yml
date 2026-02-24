@@ -102,8 +102,8 @@ services:
       - OPENSEARCH_PASSWORD=admin
       - LOGSTASH_AUTH_TOKEN=${LOGSTASH_AUTH_TOKEN}
     volumes:
-      - ./config/logstash/config-opensearch/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
-      - ./config/logstash/pipeline-opensearch:/usr/share/logstash/pipeline:ro
+      - ./config/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
     # All Logstash access is now routed through APISIX gateway for load balancing support
     # External access via APISIX:
     #   - TCP log ingestion: localhost:9100 (APISIX) -> logstash:5000
@@ -216,7 +216,7 @@ services:
       - APISIX_ADMIN_KEY=${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
     volumes:
       - ./config/apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./config/apisix/apisix-opensearch.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./config/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
       - apisix-logs:/usr/local/apisix/logs
     ports:
       - "9080:9080"    # HTTP Gateway

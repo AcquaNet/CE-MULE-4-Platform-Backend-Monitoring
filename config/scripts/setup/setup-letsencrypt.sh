@@ -226,7 +226,7 @@ echo ""
 # Copy certificates to certs directory
 echo -e "${GREEN}Copying certificates to certs directory...${NC}"
 
-mkdir -p "$CERTS_DIR"/{apisix,elasticsearch,kibana,logstash}
+mkdir -p "$CERTS_DIR"/{apisix,opensearch,dashboards,logstash}
 
 if [ "$USE_DOCKER" = true ]; then
     CERT_PATH="$LETSENCRYPT_DIR/config/live/$DOMAIN"
@@ -247,10 +247,10 @@ else
 fi
 
 # Copy for other services (they can use the same cert)
-cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/elasticsearch/elasticsearch.crt"
-cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/elasticsearch/elasticsearch.key"
-cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/kibana/kibana.crt"
-cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/kibana/kibana.key"
+cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/opensearch/opensearch.crt"
+cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/opensearch/opensearch.key"
+cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/dashboards/dashboards.crt"
+cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/dashboards/dashboards.key"
 cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/logstash/logstash.crt"
 cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/logstash/logstash.key"
 
@@ -322,7 +322,7 @@ else
 fi
 
 # Copy to all service directories
-for service in apisix elasticsearch kibana logstash; do
+for service in apisix opensearch dashboards logstash; do
     cp "\$CERT_PATH/fullchain.pem" "\$CERTS_DIR/\$service/\${service}.crt"
     cp "\$CERT_PATH/privkey.pem" "\$CERTS_DIR/\$service/\${service}.key"
     chmod 644 "\$CERTS_DIR/\$service/\${service}.crt"
@@ -354,8 +354,8 @@ echo "  Expires: In 90 days (auto-renewal configured)"
 echo ""
 echo -e "${YELLOW}Certificates Installed:${NC}"
 echo "  APISIX: $CERTS_DIR/apisix/"
-echo "  ElasticSearch: $CERTS_DIR/elasticsearch/"
-echo "  Kibana: $CERTS_DIR/kibana/"
+echo "  OpenSearch: $CERTS_DIR/opensearch/"
+echo "  OpenSearch Dashboards: $CERTS_DIR/dashboards/"
 echo "  Logstash: $CERTS_DIR/logstash/"
 echo ""
 echo -e "${YELLOW}Next Steps:${NC}"
@@ -368,7 +368,7 @@ echo "  2. Restart services with SSL profile:"
 echo "     ${BLUE}docker-compose --profile ssl up -d${NC}"
 echo ""
 echo "  3. Verify HTTPS access:"
-echo "     ${BLUE}curl https://$DOMAIN:9443/elasticsearch/_cluster/health${NC}"
+echo "     ${BLUE}curl https://$DOMAIN:9443/opensearch/_cluster/health${NC}"
 echo ""
 echo -e "${YELLOW}Automatic Renewal:${NC}"
 echo ""

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Generate Secure Secrets for ELK Stack
+# Generate Secure Secrets for OpenSearch Stack
 #
-# This script generates secure random passwords and keys for all ELK stack services.
+# This script generates secure random passwords and keys for all OpenSearch stack services.
 # It creates or updates the .env file with cryptographically secure values.
 #
 # Usage:
@@ -69,7 +69,7 @@ generate_uuid() {
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   ELK Stack Secure Secrets Generator${NC}"
+echo -e "${BLUE}   OpenSearch Stack Secure Secrets Generator${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -95,10 +95,10 @@ fi
 echo -e "${GREEN}Generating secure random passwords and keys...${NC}"
 echo ""
 
-ELASTIC_PASSWORD=$(generate_password_32)
-KIBANA_PASSWORD=$(generate_password_32)
-KIBANA_ENCRYPTION_KEY=$(generate_password_48)
-KIBANA_REPORTING_ENCRYPTION_KEY=$(generate_password_48)
+OPENSEARCH_ADMIN_PASSWORD=$(generate_password_32)
+DASHBOARDS_PASSWORD=$(generate_password_32)
+DASHBOARDS_ENCRYPTION_KEY=$(generate_password_48)
+DASHBOARDS_REPORTING_ENCRYPTION_KEY=$(generate_password_48)
 APISIX_ADMIN_KEY=$(generate_hex_32)
 APISIX_DASHBOARD_PASSWORD=$(generate_password_32)
 GRAFANA_ADMIN_PASSWORD=$(generate_password_32)
@@ -109,10 +109,10 @@ APM_SECRET_TOKEN=$(generate_password_32)
 if [ "$DRY_RUN" = true ]; then
     echo -e "${BLUE}Generated secrets (dry-run, not saved):${NC}"
     echo ""
-    echo "ELASTIC_PASSWORD=$ELASTIC_PASSWORD"
-    echo "KIBANA_PASSWORD=$KIBANA_PASSWORD"
-    echo "KIBANA_ENCRYPTION_KEY=$KIBANA_ENCRYPTION_KEY"
-    echo "KIBANA_REPORTING_ENCRYPTION_KEY=$KIBANA_REPORTING_ENCRYPTION_KEY"
+    echo "OPENSEARCH_ADMIN_PASSWORD=$OPENSEARCH_ADMIN_PASSWORD"
+    echo "DASHBOARDS_PASSWORD=$DASHBOARDS_PASSWORD"
+    echo "DASHBOARDS_ENCRYPTION_KEY=$DASHBOARDS_ENCRYPTION_KEY"
+    echo "DASHBOARDS_REPORTING_ENCRYPTION_KEY=$DASHBOARDS_REPORTING_ENCRYPTION_KEY"
     echo "APISIX_ADMIN_KEY=$APISIX_ADMIN_KEY"
     echo "APISIX_DASHBOARD_PASSWORD=$APISIX_DASHBOARD_PASSWORD"
     echo "GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD"
@@ -129,10 +129,10 @@ echo -e "${GREEN}Creating .env file from template...${NC}"
 cp "$ENV_EXAMPLE" "$ENV_FILE"
 
 # Replace CHANGE_ME_PLEASE placeholders with generated values
-sed -i "s|ELASTIC_PASSWORD=CHANGE_ME_PLEASE|ELASTIC_PASSWORD=$ELASTIC_PASSWORD|" "$ENV_FILE"
-sed -i "s|KIBANA_PASSWORD=CHANGE_ME_PLEASE|KIBANA_PASSWORD=$KIBANA_PASSWORD|" "$ENV_FILE"
-sed -i "s|KIBANA_ENCRYPTION_KEY=CHANGE_ME_PLEASE_MINIMUM_32_CHARACTERS_REQUIRED|KIBANA_ENCRYPTION_KEY=$KIBANA_ENCRYPTION_KEY|" "$ENV_FILE"
-sed -i "s|KIBANA_REPORTING_ENCRYPTION_KEY=CHANGE_ME_PLEASE_MINIMUM_32_CHARACTERS_REQUIRED|KIBANA_REPORTING_ENCRYPTION_KEY=$KIBANA_REPORTING_ENCRYPTION_KEY|" "$ENV_FILE"
+sed -i "s|OPENSEARCH_ADMIN_PASSWORD=CHANGE_ME_PLEASE|OPENSEARCH_ADMIN_PASSWORD=$OPENSEARCH_ADMIN_PASSWORD|" "$ENV_FILE"
+sed -i "s|DASHBOARDS_PASSWORD=CHANGE_ME_PLEASE|DASHBOARDS_PASSWORD=$DASHBOARDS_PASSWORD|" "$ENV_FILE"
+sed -i "s|DASHBOARDS_ENCRYPTION_KEY=CHANGE_ME_PLEASE_MINIMUM_32_CHARACTERS_REQUIRED|DASHBOARDS_ENCRYPTION_KEY=$DASHBOARDS_ENCRYPTION_KEY|" "$ENV_FILE"
+sed -i "s|DASHBOARDS_REPORTING_ENCRYPTION_KEY=CHANGE_ME_PLEASE_MINIMUM_32_CHARACTERS_REQUIRED|DASHBOARDS_REPORTING_ENCRYPTION_KEY=$DASHBOARDS_REPORTING_ENCRYPTION_KEY|" "$ENV_FILE"
 sed -i "s|APISIX_ADMIN_KEY=CHANGE_ME_PLEASE|APISIX_ADMIN_KEY=$APISIX_ADMIN_KEY|" "$ENV_FILE"
 sed -i "s|APISIX_DASHBOARD_PASSWORD=CHANGE_ME_PLEASE|APISIX_DASHBOARD_PASSWORD=$APISIX_DASHBOARD_PASSWORD|" "$ENV_FILE"
 sed -i "s|GRAFANA_ADMIN_PASSWORD=CHANGE_ME_PLEASE|GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD|" "$ENV_FILE"
@@ -148,13 +148,13 @@ echo -e "${BLUE}═════════════════════�
 echo -e "${BLUE}  IMPORTANT: Save these credentials in a secure location${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "${YELLOW}ElasticSearch Credentials:${NC}"
+echo -e "${YELLOW}OpenSearch Credentials:${NC}"
 echo "  Username: elastic"
-echo "  Password: $ELASTIC_PASSWORD"
+echo "  Password: $OPENSEARCH_ADMIN_PASSWORD"
 echo ""
-echo -e "${YELLOW}Kibana System User:${NC}"
-echo "  Username: kibana_system"
-echo "  Password: $KIBANA_PASSWORD"
+echo -e "${YELLOW}OpenSearch Dashboards System User:${NC}"
+echo "  Username: dashboards_system"
+echo "  Password: $DASHBOARDS_PASSWORD"
 echo ""
 echo -e "${YELLOW}APISIX Admin:${NC}"
 echo "  API Key: $APISIX_ADMIN_KEY"
@@ -172,11 +172,11 @@ echo "     - Memory settings (ES_JAVA_OPTS, LS_JAVA_OPTS)"
 echo "     - Client information (CLIENT_NAME, ENVIRONMENT)"
 echo "     - Retention policies (RETENTION_DAYS)"
 echo ""
-echo "  2. Start the ELK stack:"
+echo "  2. Start the OpenSearch stack:"
 echo "     ${BLUE}docker-compose up -d${NC}"
 echo ""
 echo "  3. Access services:"
-echo "     - Kibana:    http://localhost:9080/kibana"
+echo "     - OpenSearch Dashboards:    http://localhost:9080/dashboards"
 echo "     - Grafana:   http://localhost:9080/grafana"
 echo "     - Prometheus: http://localhost:9080/prometheus"
 echo ""

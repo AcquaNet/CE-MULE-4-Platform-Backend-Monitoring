@@ -1,183 +1,161 @@
-# Application Performance Monitoring (APM)
+# Application Performance Monitoring (APM) with Jaeger
 
-Complete guide for setting up and using Elastic APM Server to monitor Mule 4 applications in both Docker and CloudHub deployments.
+Complete guide for setting up and using Jaeger with the OpenTelemetry Mule 4 Agent to monitor Mule 4 applications in both Docker and CloudHub deployments.
+
+> **Note**: This platform was migrated from Elastic APM to Jaeger with OpenTelemetry for open-source tracing and vendor-neutral instrumentation.
 
 ## Overview
 
-APM Server receives performance data from Mule applications instrumented with the `elastic-apm-mule4-agent` and stores it in ElasticSearch for visualization in Kibana.
+Jaeger receives traces from Mule applications instrumented with the `otel-mule4-agent` (OpenTelemetry Mule 4 Agent) and stores them in OpenSearch for visualization.
 
 **Version Compatibility:**
-- APM Server: 8.10.4
-- elastic-apm-mule4-agent: 0.4.0 (uses elastic-apm-agent 1.17.0)
-- ElasticSearch: 8.11.3
-- Kibana: 8.11.3
-
-**Note**: APM Server 8.10.4 is fully compatible with elastic-apm-agent 1.17.0. Using APM Server 8.11.x would require upgrading the Java agent to 1.43.0+.
+- Jaeger: 1.52.0
+- OpenTelemetry Mule 4 Agent: 0.1.0 (uses OpenTelemetry SDK 1.32.0)
+- OpenSearch: 2.11.1
+- OpenSearch Dashboards: 2.11.1
 
 ## Architecture
 
 ```
-Mule Application (with APM agent)
-  ↓ HTTP POST to port 8200
-APM Server (172.42.0.13:8200)
-  ↓ Transforms and enriches data
-ElasticSearch (172.42.0.10:9200)
-  ↓ Stores APM indices
-Kibana APM UI (http://localhost:9080/kibana/app/apm)
+Mule Application (with OTEL agent)
+  ↓ OTLP gRPC to port 4317
+Jaeger (172.42.0.13)
+  ↓ Stores traces
+OpenSearch (172.42.0.10:9200)
+  ↓ Indexed in jaeger-* indices
+Jaeger UI (http://localhost:16686/jaeger)
 ```
+
+**Components:**
+- **OpenTelemetry Mule 4 Agent**: Custom agent that instruments Mule flows and processors
+- **Jaeger Collector**: Receives OTLP traces and writes to OpenSearch
+- **Jaeger Query**: Serves the Jaeger UI and API
+- **OpenSearch**: Stores trace data in `jaeger-span-*` and `jaeger-service-*` indices
 
 ---
 
-## APM Server Setup
+## Jaeger Setup
 
-APM Server is already included in the ELK stack `docker-compose.yml` and starts automatically.
+Jaeger is already included in the OpenSearch stack `docker-compose.yml` and starts automatically.
 
 ### Configuration
 
-APM Server is configured via command-line options in `docker-compose.yml`:
+Jaeger is configured via environment variables in `docker-compose.yml`:
 
 ```yaml
-apm-server:
-  image: docker.elastic.co/apm/apm-server:8.10.4
-  command: >
-    apm-server -e
-      -E apm-server.host=0.0.0.0:8200
-      -E output.elasticsearch.hosts=["http://elasticsearch:9200"]
-      -E apm-server.kibana.enabled=true
-      -E apm-server.kibana.host=http://kibana:5601
-      -E apm-server.auth.anonymous.enabled=true
+jaeger:
+  image: jaegertracing/all-in-one:1.52
+  environment:
+    - SPAN_STORAGE_TYPE=opensearch
+    - ES_SERVER_URLS=https://opensearch:9200
+    - ES_TLS_SKIP_HOST_VERIFY=true
+    - ES_USERNAME=admin
+    - ES_PASSWORD=admin
+    - COLLECTOR_OTLP_ENABLED=true
 ```
 
 ### Network Access
 
-- **Internal (Docker)**: `http://apm-server:8200` (recommended for Mule agents)
-- **Via APISIX**: `http://localhost:9080/apm-server` (external access)
-- **Direct**: `http://localhost:8200` (debugging only)
+| Port | Protocol | Description |
+|------|----------|-------------|
+| 4317 | gRPC | OTLP trace receiver (recommended) |
+| 4318 | HTTP | OTLP HTTP receiver |
+| 16686 | HTTP | Jaeger UI |
+| 14268 | HTTP | Jaeger HTTP collector (legacy) |
+| 14250 | gRPC | Jaeger gRPC collector (legacy) |
+
+**Access URLs:**
+- **Jaeger UI**: http://localhost:16686/jaeger/ or http://localhost:9080/jaeger/
+- **Internal (Docker)**: `http://jaeger:4317` (OTLP gRPC)
 - **IP Address**: 172.42.0.13 (on ce-base-micronet)
 
-### Viewing APM Data
+### Viewing Traces
 
-Access the Kibana APM UI at: **http://localhost:9080/kibana/app/apm**
+Access the Jaeger UI at: **http://localhost:16686/jaeger/**
+
+1. Select a service (e.g., `ce-mule-base-worker-1`)
+2. Set time range
+3. Click "Find Traces"
+4. Click on a trace to see span details
+
+### Jaeger API
+
+```bash
+# List services
+curl -s "http://localhost:16686/jaeger/api/services"
+
+# Query traces for a service
+curl -s "http://localhost:16686/jaeger/api/traces?service=ce-mule-base-worker-1&limit=10"
+
+# Get specific trace
+curl -s "http://localhost:16686/jaeger/api/traces/<traceID>"
+```
 
 ---
 
-## Security Configuration
+## OpenTelemetry Mule 4 Agent
 
-### Current Status
+### Overview
 
-**INSECURE**: APM Server currently has anonymous authentication enabled. Anyone who can reach port 8200 can send APM data.
+The `otel-mule4-agent` is a custom OpenTelemetry agent that instruments Mule 4 applications, providing:
 
-### Option 1: Secret Token (Recommended for Internal Apps)
+- Automatic span creation for Mule flows
+- Span creation for each processor (Logger, Set Payload, HTTP Request, etc.)
+- Correlation ID propagation
+- Worker identification
+- Environment and version tagging
 
-Single shared token for all applications.
+### Source Location
 
-**Pros:**
-- Simple to configure
-- Perfect for trusted internal applications
+`git/elastic-apm-mule4-agent/otel-mule4-agent/`
 
-**Cons:**
-- All apps share the same token
-- Token rotation requires updating all apps
+### Building the Agent
 
-**Setup:**
-
-1. **Generate a secure secret token:**
-   ```bash
-   openssl rand -base64 32
-   ```
-
-2. **Add to `.env` file:**
-   ```bash
-   APM_SECRET_TOKEN=<your-generated-token>
-   ```
-
-3. **Update `docker-compose.yml` APM Server configuration:**
-
-   Change:
-   ```yaml
-   -E apm-server.auth.anonymous.enabled=true
-   ```
-
-   To:
-   ```yaml
-   -E apm-server.auth.anonymous.enabled=false
-   -E apm-server.auth.secret_token=${APM_SECRET_TOKEN}
-   ```
-
-4. **Restart APM Server:**
-   ```bash
-   docker-compose restart apm-server
-   ```
-
-5. **Configure Mule applications** (see Mule Configuration section below)
-
-**Testing:**
 ```bash
-# Should fail (401 Unauthorized)
-curl -X POST http://localhost:8200/intake/v2/events \
-  -H "Content-Type: application/x-ndjson" \
-  -d '{"metadata":{"service":{"name":"test"}}}'
-
-# Should succeed (202 Accepted)
-curl -X POST http://localhost:8200/intake/v2/events \
-  -H "Content-Type: application/x-ndjson" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"metadata":{"service":{"name":"test"}}}'
+cd git/elastic-apm-mule4-agent/otel-mule4-agent
+mvn clean package -DskipTests
+# Output: target/otel-mule4-agent-0.1.0.jar
 ```
 
-### Option 2: API Keys (Recommended for Production)
+### Agent Components
 
-Individual keys per application with fine-grained control.
+| Class | Description |
+|-------|-------------|
+| `OtelStarter` | Initializes OpenTelemetry SDK |
+| `OtelPipelineNotificationListener` | Creates spans for flow executions |
+| `OtelMessageProcessorNotificationListener` | Creates spans for processors |
+| `OtelExceptionNotificationListener` | Records exceptions |
 
-**Pros:**
-- Individual keys per application
-- Fine-grained control and revocation
-- Audit trail of which app sent what
+### Configuration via tracer.xml
 
-**Cons:**
-- More complex setup
-- Requires ElasticSearch with X-Pack security enabled
+The agent is loaded via `tracer.xml` in the Mule application:
 
-**Setup:**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
 
-1. **Enable X-Pack Security in ElasticSearch** (see SECURITY_SETUP.md)
+    <object name="_otelStarter"
+        class="io.opentelemetry.mule4.agent.OtelStarter" />
+    <object name="_otelPipelineNotifications"
+        class="io.opentelemetry.mule4.agent.OtelPipelineNotificationListener" />
+    <object name="_otelMessageProcessorNotifications"
+        class="io.opentelemetry.mule4.agent.OtelMessageProcessorNotificationListener" />
+    <object name="_otelExceptionNotifications"
+        class="io.opentelemetry.mule4.agent.OtelExceptionNotificationListener" />
 
-2. **Create API key via Kibana:**
-   - Navigate to: Stack Management → API Keys
-   - Click "Create API Key"
-   - Name: `mule-app-1-apm`
-   - Set expiration (optional)
-   - Note the API key and ID
-
-3. **Update `docker-compose.yml`:**
-   ```yaml
-   -E apm-server.auth.anonymous.enabled=false
-   -E apm-server.auth.api_key.enabled=true
-   ```
-
-4. **Configure Mule application:**
-   ```properties
-   elastic.apm.api_key=<api-key-id>:<api-key-secret>
-   elastic.apm.server_urls=http://apm-server:8200
-   ```
-
-### Option 3: SSL/TLS with Client Certificates (Enterprise)
-
-For maximum security, combine API keys with mutual TLS authentication.
-
-See [SSL_TLS_SETUP.md](SSL_TLS_SETUP.md) for complete SSL/TLS configuration.
-
-### Security Recommendations
-
-For production deployments:
-
-- Anonymous authentication is disabled
-- Secret token or API keys are configured
-- Tokens/keys are stored securely (not in source code)
-- SSL/TLS is enabled for production
-- API keys have expiration dates
-- Regular token/key rotation policy is established
-- Monitoring for unauthorized access attempts is in place
+    <notifications>
+        <notification event="PIPELINE-MESSAGE" />
+        <notification event="MESSAGE-PROCESSOR" />
+        <notification event="EXCEPTION" />
+        <notification-listener ref="_otelMessageProcessorNotifications" />
+        <notification-listener ref="_otelPipelineNotifications" />
+        <notification-listener ref="_otelExceptionNotifications" />
+    </notifications>
+</mule>
+```
 
 ---
 
@@ -185,58 +163,63 @@ For production deployments:
 
 ### Prerequisites
 
-The Mule application must include:
-
-1. **APM agent dependency** in `pom.xml`:
-   ```xml
-   <dependency>
-     <groupId>co.elastic.apm</groupId>
-     <artifactId>mule4-agent</artifactId>
-     <version>0.4.0</version>
-   </dependency>
-   ```
-
-2. **Import tracer.xml** in your main flow:
-   ```xml
-   <import file="tracer.xml" doc:name="Import APM Tracer" />
-   ```
+1. **Agent JAR** must be in the app's `lib/` folder or repository
+2. **tracer.xml** imported in the main flow
+3. **Environment variables** configured for OTEL
 
 ### Docker Deployment
 
-For Mule applications running in Docker (git/CE-MULE-4-Platform-Backend-Docker):
+For Mule applications running in Docker (`git/CE-MULE-4-Platform-Backend-Docker`):
 
 **Configure via environment variables in `docker-compose.yml`:**
 
 ```yaml
 ce-base-mule-backend-1:
   environment:
-    # Elastic APM Configuration
-    JAVA_OPTS: >-
-      -Delastic.apm.server_urls=http://apm-server:8200
-      -Delastic.apm.service_name=ce-mule-base-worker-1
-      -Delastic.apm.service_version=${MULEAPP_VERSION}
-      -Delastic.apm.environment=${mule_env}
-      -Delastic.apm.log_level=INFO
-      -Delastic.apm.transaction_sample_rate=1.0
-```
-
-**With Secret Token:**
-```yaml
-    JAVA_OPTS: >-
-      -Delastic.apm.server_urls=http://apm-server:8200
-      -Delastic.apm.secret_token=${APM_SECRET_TOKEN}
-      -Delastic.apm.service_name=ce-mule-base-worker-1
-      ...
+    # OpenTelemetry Configuration
+    OTEL_SERVICE_NAME: ce-mule-base-worker-1
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    OTEL_TRACES_EXPORTER: otlp
+    OTEL_METRICS_EXPORTER: none
+    OTEL_LOGS_EXPORTER: none
+    OTEL_RESOURCE_ATTRIBUTES: >-
+      service.version=${MULEAPP_VERSION},
+      deployment.environment=${mule_env},
+      worker.id=worker-1
 ```
 
 **Configuration Options:**
-- `elastic.apm.server_urls`: APM Server endpoint (use internal hostname)
-- `elastic.apm.service_name`: Service identifier in APM UI
-- `elastic.apm.service_version`: Application version
-- `elastic.apm.environment`: Environment (dev/qa/prod)
-- `elastic.apm.transaction_sample_rate`: Sampling rate (1.0 = 100%)
-- `elastic.apm.secret_token`: Authentication token (if enabled)
-- `elastic.apm.api_key`: API key (if using API keys)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `OTEL_SERVICE_NAME` | Service name in Jaeger | `ce-mule-base-worker-1` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Jaeger OTLP endpoint | `http://jaeger:4317` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Protocol (grpc or http/protobuf) | `grpc` |
+| `OTEL_TRACES_EXPORTER` | Trace exporter type | `otlp` |
+| `OTEL_METRICS_EXPORTER` | Metrics exporter (none to disable) | `none` |
+| `OTEL_LOGS_EXPORTER` | Logs exporter (none to disable) | `none` |
+| `OTEL_RESOURCE_ATTRIBUTES` | Additional resource attributes | `service.version=1.0.0` |
+
+### Deploying the Agent JAR
+
+The agent JAR must be available to the Mule classloader:
+
+**Option 1: App lib folder (recommended)**
+```bash
+# Copy to running container
+docker cp otel-mule4-agent-0.1.0.jar ce-base-mule-backend-1:/opt/mule/mule-standalone-4.4.0/apps/ce-mule-base-*/lib/
+```
+
+**Option 2: Maven dependency**
+Add to `pom.xml`:
+```xml
+<dependency>
+  <groupId>io.opentelemetry.mule4</groupId>
+  <artifactId>otel-mule4-agent</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
 
 ### CloudHub Deployment
 
@@ -245,217 +228,225 @@ For Mule applications deployed to CloudHub:
 #### Architecture
 
 ```
-CloudHub Mule App
-      ↓ (HTTPS/HTTP)
+CloudHub Mule App (with OTEL agent)
+      ↓ (HTTPS OTLP)
 APISIX Gateway (Public IP/Domain)
       ↓ (Internal Network)
-APM Server (172.42.0.13:8200)
+Jaeger (172.42.0.13:4317)
       ↓
-ElasticSearch → Kibana APM UI
+OpenSearch → Jaeger UI
 ```
 
 #### Prerequisites
 
 1. APISIX Gateway must be accessible from the internet
-   - Port 9080 (HTTP) or 9443 (HTTPS) open
-   - Firewall rules configured for CloudHub IP ranges
-2. APM Server running and connected to APISIX
+2. OTLP HTTP endpoint exposed (port 4318)
+3. Jaeger running and connected to OpenSearch
 
-#### Step 1: Verify APISIX Access
+#### Step 1: Expose OTLP HTTP Endpoint
 
-Test from external network (simulates CloudHub):
+Add route to APISIX for OTLP HTTP:
 
-```bash
-curl -v http://<your-apisix-ip>:9080/apm-server
-```
-
-**Expected Response:**
-```json
-{
-  "build_date": "2023-11-09T11:25:47Z",
-  "version": "8.10.4",
-  "publish_ready": true
-}
+```yaml
+- uri: /otlp/*
+  name: otlp-collector
+  upstream:
+    nodes:
+      "jaeger:4318": 1
+    type: roundrobin
+  plugins:
+    cors:
+      allow_origins: "*"
 ```
 
 #### Step 2: Configure CloudHub Properties
 
-Create `src/main/resources/config/cloudhub.properties`:
-
 ```properties
-# APM Server URL (via APISIX)
-elastic.apm.server_url=http://<your-apisix-ip>:9080/apm-server
-
-# OR use domain name (recommended for production)
-elastic.apm.server_url=https://apm.company.com:9443/apm-server
-
-# Service Configuration
-elastic.apm.service_name=ce-mule-base
-elastic.apm.environment=cloudhub
-elastic.apm.enabled=true
-
-# Sampling (reduce for production)
-elastic.apm.transaction_sample_rate=0.1
-
-# Authentication (if enabled)
-elastic.apm.secret_token=${APM_SECRET_TOKEN}
+# OTEL Configuration for CloudHub
+OTEL_SERVICE_NAME=ce-mule-base-cloudhub
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-domain.com:9443/otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_TRACES_EXPORTER=otlp
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=cloudhub
 ```
 
-#### Step 3: Deploy to CloudHub
+#### Step 3: Verify in Jaeger
 
-1. Build application: `mvn clean package`
-2. Upload JAR to CloudHub Runtime Manager
-3. Set environment variable `APM_SECRET_TOKEN` in CloudHub properties (if using authentication)
+1. Open: http://localhost:16686/jaeger/
+2. Look for service: **ce-mule-base-cloudhub**
+3. Verify traces are appearing
 
-#### Step 4: Verify in Kibana
+---
 
-1. Open: http://localhost:9080/kibana/app/apm
-2. Look for service: **ce-mule-base** with environment: **cloudhub**
-3. Verify transactions are appearing
+## Trace Data in OpenSearch
 
-#### Network Access Options
+Jaeger stores traces in OpenSearch indices:
 
-**Option 1: Public IP (Testing)**
-```properties
-elastic.apm.server_url=http://157.245.236.175:9080/apm-server
+| Index Pattern | Description |
+|---------------|-------------|
+| `jaeger-span-YYYY-MM-DD` | Individual spans |
+| `jaeger-service-YYYY-MM-DD` | Service metadata |
+
+### Querying Traces in OpenSearch
+
+```bash
+# List Jaeger indices
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cat/indices?v" | grep jaeger
+
+# Query recent spans
+docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/jaeger-span-*/_search?pretty" \
+  -H 'Content-Type: application/json' -d '
+{
+  "size": 5,
+  "sort": [{"startTimeMillis": "desc"}],
+  "_source": ["operationName", "serviceName", "duration", "tags"]
+}'
 ```
 
-**Option 2: Domain Name (Production)**
-```properties
-elastic.apm.server_url=https://apm.company.com:9443/apm-server
-```
+### Creating Index Pattern in OpenSearch Dashboards
 
-**Option 3: VPN/Private Link (Enterprise)**
-```properties
-elastic.apm.server_url=http://apm-internal.company.com:9080/apm-server
-```
+1. Go to **Stack Management** → **Index Patterns**
+2. Create pattern: `jaeger-span-*`
+3. Time field: `startTimeMillis`
 
 ---
 
 ## Performance Tuning
 
-### Sampling Rates
+### Sampling
 
-Control how much data is collected:
+Control how much trace data is collected:
 
 ```properties
-# Development: 100% (capture everything)
-elastic.apm.transaction_sample_rate=1.0
+# Development: Sample everything
+OTEL_TRACES_SAMPLER=always_on
 
-# Staging: 50%
-elastic.apm.transaction_sample_rate=0.5
+# Production: Sample 10%
+OTEL_TRACES_SAMPLER=traceidratio
+OTEL_TRACES_SAMPLER_ARG=0.1
 
-# Production: 10% (reduce overhead)
-elastic.apm.transaction_sample_rate=0.1
+# Custom parent-based sampling
+OTEL_TRACES_SAMPLER=parentbased_traceidratio
+OTEL_TRACES_SAMPLER_ARG=0.1
 ```
 
-### Additional Tuning Options
+### Batch Processing
+
+Configure span batching:
 
 ```properties
-# Limit stack trace depth
-elastic.apm.stack_trace_limit=25
+# Max queue size
+OTEL_BSP_MAX_QUEUE_SIZE=2048
 
-# Set minimum span duration
-elastic.apm.span_frames_min_duration=5ms
+# Max batch size
+OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512
 
-# Disable specific features
-elastic.apm.capture_body=off
-elastic.apm.capture_headers=false
+# Export timeout
+OTEL_BSP_EXPORT_TIMEOUT=30000
+
+# Schedule delay
+OTEL_BSP_SCHEDULE_DELAY=5000
 ```
 
 ---
 
 ## Troubleshooting
 
-### Issue: No APM Data in Kibana
+### Issue: No Traces in Jaeger
 
-**Check 1: Verify APM agent is enabled**
-```properties
-elastic.apm.enabled=true  # Must be true
-```
-
-**Check 2: Verify sampling rate**
-```properties
-elastic.apm.transaction_sample_rate=1.0  # Use 100% for testing
-```
-
-**Check 3: Generate test traffic**
+**Check 1: Verify Jaeger is running**
 ```bash
-curl http://localhost:9080/api/v1/status
+docker ps | grep jaeger
+curl http://localhost:16686/jaeger/api/services
 ```
 
-**Check 4: Check Mule logs**
+**Check 2: Verify OTEL configuration**
 ```bash
-docker logs ce-base-mule-backend-1 2>&1 | grep -i "apm\|elastic"
+docker exec ce-base-mule-backend-1 env | grep OTEL
 ```
 
-**Check 5: Check APM Server logs**
+**Check 3: Check Mule logs for OTEL initialization**
 ```bash
-docker logs apm-server
+docker logs ce-base-mule-backend-1 2>&1 | grep -i "otel\|opentelemetry"
 ```
 
-**Check 6: Verify APM indices**
+**Check 4: Verify agent JAR is loaded**
 ```bash
-curl http://localhost:9080/elasticsearch/_cat/indices?v | grep apm
+docker exec ce-base-mule-backend-1 ls -la /opt/mule/mule-standalone-4.4.0/apps/ce-mule-base-*/lib/ | grep otel
 ```
 
-Expected indices:
-- `apm-8.10.4-transaction-*`
-- `apm-8.10.4-span-*`
-- `apm-8.10.4-metric-*`
-- `apm-8.10.4-error-*`
-
-### Issue: CloudHub Can't Reach APM Server
-
-**Check 1: Test APISIX from external network**
+**Check 5: Generate test traffic**
 ```bash
-curl -v http://<your-apisix-ip>:9080/apm-server
+docker exec ce-base-mule-backend-1 curl -s http://localhost:8081/api/v1/status
 ```
 
-**Check 2: Verify firewall allows CloudHub IPs**
+### Issue: ClassNotFoundException
 
-CloudHub IP ranges (AWS US-East):
-- 52.0.0.0/8
-- 54.0.0.0/8
+If you see `ClassNotFoundException: io.opentelemetry.mule4.agent.OtelStarter`:
 
-**Check 3: Check APISIX logs**
+1. Verify JAR is in app's `lib/` folder
+2. Restart the Mule worker
+3. Check container logs for classloader issues
+
+### Issue: Connection Refused to Jaeger
+
+**Check 1: Verify network connectivity**
 ```bash
-docker logs apisix | grep apm-server
+docker exec ce-base-mule-backend-1 nc -zv jaeger 4317
 ```
 
-**Check 4: Verify route exists**
+**Check 2: Verify Jaeger OTLP is enabled**
 ```bash
-curl http://localhost:9180/apisix/admin/routes/apm-server-api \
-  -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1"
+docker logs jaeger 2>&1 | grep -i otlp
 ```
 
-### Issue: Authentication Errors
-
-**Check 1: Verify token is correct**
+**Check 3: Check Jaeger collector health**
 ```bash
-# In CloudHub, check environment variable
-echo $APM_SECRET_TOKEN
-
-# In Docker, check .env file
-grep APM_SECRET_TOKEN .env
+curl http://localhost:14269/health
 ```
 
-**Check 2: Test authentication**
-```bash
-curl -X POST http://localhost:8200/intake/v2/events \
-  -H "Content-Type: application/x-ndjson" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"metadata":{"service":{"name":"test"}}}'
+### Issue: Traces Missing Spans
+
+**Check 1: Verify notification listeners**
+- Ensure `tracer.xml` has all notification listeners registered
+- Check for XML syntax errors
+
+**Check 2: Verify Mule app includes tracer.xml**
+```xml
+<import file="tracer.xml" doc:name="Import OTEL Tracer" />
 ```
+
+---
+
+## Migration from Elastic APM
+
+If migrating from Elastic APM:
+
+| Elastic APM | OpenTelemetry/Jaeger |
+|-------------|---------------------|
+| `elastic.apm.server_urls` | `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `elastic.apm.service_name` | `OTEL_SERVICE_NAME` |
+| `elastic.apm.secret_token` | Not needed (internal network) |
+| `elastic.apm.transaction_sample_rate` | `OTEL_TRACES_SAMPLER_ARG` |
+| `elastic-apm-mule4-agent` | `otel-mule4-agent` |
+| APM Server | Jaeger |
+| Kibana APM UI | Jaeger UI |
+
+**Key Benefits:**
+- **Open Source**: No licensing concerns
+- **Vendor Neutral**: OpenTelemetry is a CNCF standard
+- **OpenSearch Integration**: Native Jaeger support
+- **Simpler Setup**: No APM Server authentication needed
 
 ---
 
 ## Related Documentation
 
-- [SECURITY_SETUP.md](SECURITY_SETUP.md) - General security configuration
-- [SSL_TLS_SETUP.md](SSL_TLS_SETUP.md) - SSL/TLS setup for production
-- [MONITORING_SETUP.md](MONITORING_SETUP.md) - Prometheus and Grafana monitoring
+- [OpenSearch Stack Configuration](04-elk-stack.md) - OpenSearch setup
+- [SECURITY_SETUP.md](../SECURITY_SETUP.md) - General security configuration
+- [SSL_TLS_SETUP.md](../SSL_TLS_SETUP.md) - SSL/TLS setup for production
+- [MONITORING_SETUP.md](../MONITORING_SETUP.md) - Prometheus and Grafana monitoring
 
 ---
 
-**Last Updated**: 2026-01-01
+**Last Updated**: 2026-01-20
