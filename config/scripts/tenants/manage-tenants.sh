@@ -39,18 +39,42 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Load environment variables (safely handle special characters)
 if [ -f "$PROJECT_ROOT/.env" ]; then
     set -a
-    source <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$PROJECT_ROOT/.env" | grep -v '^#' | sed 's/=\(.*\)/="\1"/' | sed 's/"""/"/g')
+    . "$PROJECT_ROOT/.env"
     set +a
 fi
 
 # Configuration
-ES_HOST="${OPENSEARCH_HOST:-https://localhost:9200}"
+# OpenSearch through the gateway (9080 is published on 127.0.0.1 only)
+ES_HOST="${OPENSEARCH_URL:-http://localhost:9080/opensearch}"
+SEC="$ES_HOST/_plugins/_security/api"
 ES_USER="${OPENSEARCH_USERNAME:-admin}"
-ES_PASS="${OPENSEARCH_ADMIN_PASSWORD:-admin}"
-KEYCLOAK_HOST="${KEYCLOAK_HOST:-http://localhost:8080}"
+ES_PASS="${OPENSEARCH_ADMIN_PASSWORD:?OPENSEARCH_ADMIN_PASSWORD not set (.env)}"
+# Keycloak through the gateway (its own port isn't published); HTTPS with the platform's local CA
+KEYCLOAK_HOST="${KEYCLOAK_URL:-http://localhost:9080}"   # master realm token: APISIX serves it on 9080 only
+# JSON queries with Python (already needed by the platform's self-tests) instead of jq
+PY=$(for p in python3 python; do "$p" -c 1 >/dev/null 2>&1 && { echo "$p"; break; }; done)
+[ -n "$PY" ] || { echo "ERROR: python 3 is required" >&2; exit 1; }
+# j '<python using d (the JSON on stdin) and objs(d) (every object, recursively)>' [args -> sys.argv[1:]]
+j() {
+    "$PY" -c "import json, sys
+d = json.load(sys.stdin)
+def objs(o):
+    if isinstance(o, dict):
+        yield o
+        for v in o.values(): yield from objs(v)
+    elif isinstance(o, list):
+        for v in o: yield from objs(v)
+$1" "${@:2}"
+}
+kc() {
+    local ca="$PROJECT_ROOT/certs/ca/ca.crt" extra=()
+    [ -f "$ca" ] && extra+=(--cacert "$ca")
+    case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) extra+=(--ssl-no-revoke) ;; esac   # Windows curl (schannel)
+    curl -s "${extra[@]}" "$@"
+}
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mule}"
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN_USER:-admin}"
-KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-}"
 
 # Print banner
 print_banner() {
@@ -86,9 +110,9 @@ print_usage() {
 # Validate tenant_id format
 validate_tenant_id() {
     local tenant_id="$1"
-    if [[ ! "$tenant_id" =~ ^[a-zA-Z0-9_-]{2,50}$ ]]; then
+    if [[ ! "$tenant_id" =~ ^[a-z0-9_-]{2,50}$ ]]; then
         echo -e "${RED}Error: Invalid tenant_id format${NC}"
-        echo "Tenant ID must be 2-50 characters, alphanumeric with hyphens/underscores"
+        echo "Tenant ID must be 2-50 characters, lowercase letters, digits, hyphens/underscores (the log pipeline lowercases tenant_id)"
         exit 1
     fi
 }
@@ -115,47 +139,28 @@ create_es_role() {
 
     local role_body=$(cat <<EOF
 {
-  "cluster": ["monitor"],
-  "indices": [
+  "description": "DLS role for tenant $tenant_id",
+  "cluster_permissions": ["cluster_composite_ops_ro"],
+  "index_permissions": [
     {
-      "names": ["mule-logs-*", "logstash-*"],
-      "privileges": ["read", "view_index_metadata"],
-      "query": {
-        "term": {
-          "tenant_id": "$tenant_id"
-        }
-      }
+      "index_patterns": ["mule-logs-*", "logstash-*"],
+      "dls": "{\\"term\\": {\\"tenant_id\\": \\"$tenant_id\\"}}",
+      "allowed_actions": ["read"]
     }
-  ],
-  "applications": [
-    {
-      "application": "opensearch-dashboards",
-      "privileges": [
-        "feature_discover.read",
-        "feature_dashboard.read",
-        "feature_visualize.read"
-      ],
-      "resources": ["*"]
-    }
-  ],
-  "metadata": {
-    "tenant_id": "$tenant_id",
-    "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "description": "DLS role for tenant $tenant_id"
-  }
+  ]
 }
 EOF
 )
 
     local response
-    response=$(curl -s -X PUT "$ES_HOST/_security/role/$role_name" \
+    response=$(curl -s -X PUT "$SEC/roles/$role_name" \
         -u "$ES_USER:$ES_PASS" \
         -H "Content-Type: application/json" \
         -d "$role_body")
 
-    if echo "$response" | grep -q '"created":true\|"role":{"created":true}'; then
+    if echo "$response" | grep -q '"status":"CREATED"'; then
         echo -e "${GREEN}✓ Role created: $role_name${NC}"
-    elif echo "$response" | grep -q '"created":false'; then
+    elif echo "$response" | grep -q '"status":"OK"'; then
         echo -e "${YELLOW}⚠ Role already exists: $role_name (updated)${NC}"
     else
         echo -e "${RED}✗ Failed to create role: $response${NC}"
@@ -172,28 +177,20 @@ create_es_user() {
 
     echo -e "${CYAN}Creating OpenSearch user: $username${NC}"
 
-    local user_body=$(cat <<EOF
-{
-  "password": "$password",
-  "roles": ["$role_name"],
-  "full_name": "Tenant User ($tenant_id)",
-  "email": "$username@tenant.local",
-  "metadata": {
-    "tenant_id": "$tenant_id"
-  }
-}
-EOF
-)
+    local user_body
+    user_body=$("$PY" -c 'import json, sys; print(json.dumps({"password": sys.argv[1],
+        "opendistro_security_roles": [sys.argv[2]], "attributes": {"tenant_id": sys.argv[3]}}))' \
+        "$password" "$role_name" "$tenant_id")
 
     local response
-    response=$(curl -s -X PUT "$ES_HOST/_security/user/$username" \
+    response=$(curl -s -X PUT "$SEC/internalusers/$username" \
         -u "$ES_USER:$ES_PASS" \
         -H "Content-Type: application/json" \
         -d "$user_body")
 
-    if echo "$response" | grep -q '"created":true'; then
+    if echo "$response" | grep -q '"status":"CREATED"'; then
         echo -e "${GREEN}✓ User created: $username${NC}"
-    elif echo "$response" | grep -q '"created":false'; then
+    elif echo "$response" | grep -q '"status":"OK"'; then
         echo -e "${YELLOW}⚠ User already exists: $username (updated)${NC}"
     else
         echo -e "${RED}✗ Failed to create user: $response${NC}"
@@ -204,12 +201,12 @@ EOF
 # Get Keycloak admin token
 get_keycloak_token() {
     local token
-    token=$(curl -s -X POST "$KEYCLOAK_HOST/auth/realms/master/protocol/openid-connect/token" \
+    token=$(kc -X POST "$KEYCLOAK_HOST/auth/realms/master/protocol/openid-connect/token" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "username=$KEYCLOAK_ADMIN" \
         -d "password=$KEYCLOAK_ADMIN_PASS" \
         -d "grant_type=password" \
-        -d "client_id=admin-cli" | jq -r '.access_token')
+        -d "client_id=admin-cli" | j 'print(d.get("access_token", ""))')
 
     if [ "$token" == "null" ] || [ -z "$token" ]; then
         echo ""
@@ -227,18 +224,18 @@ create_keycloak_group() {
 
     # First, get or create the tenants parent group
     local parent_id
-    parent_id=$(curl -s "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
-        -H "Authorization: Bearer $token" | jq -r '.[] | select(.name=="tenants") | .id')
+    parent_id=$(kc "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+        -H "Authorization: Bearer $token" | j 'print(next((g["id"] for g in d if g["name"] == "tenants"), ""))')
 
     if [ -z "$parent_id" ] || [ "$parent_id" == "null" ]; then
         # Create parent group
-        curl -s -X POST "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+        kc -X POST "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
             -H "Authorization: Bearer $token" \
             -H "Content-Type: application/json" \
             -d '{"name": "tenants"}' > /dev/null
 
-        parent_id=$(curl -s "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
-            -H "Authorization: Bearer $token" | jq -r '.[] | select(.name=="tenants") | .id')
+        parent_id=$(kc "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+            -H "Authorization: Bearer $token" | j 'print(next((g["id"] for g in d if g["name"] == "tenants"), ""))')
     fi
 
     # Create tenant subgroup
@@ -253,7 +250,7 @@ EOF
 )
 
     local response
-    response=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    response=$(kc -o /dev/null -w "%{http_code}" -X POST \
         "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups/$parent_id/children" \
         -H "Authorization: Bearer $token" \
         -H "Content-Type: application/json" \
@@ -274,8 +271,8 @@ list_tenants() {
     echo ""
 
     local roles
-    roles=$(curl -s "$ES_HOST/_security/role" -u "$ES_USER:$ES_PASS" | \
-        jq -r 'to_entries[] | select(.key | startswith("tenant_")) | .key')
+    roles=$(curl -s "$SEC/roles" -u "$ES_USER:$ES_PASS" | \
+        j '[print(k) for k in d if k.startswith("tenant_")]')
 
     if [ -z "$roles" ]; then
         echo -e "${YELLOW}No tenant roles found${NC}"
@@ -302,9 +299,9 @@ list_tenants() {
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         local groups
-        groups=$(curl -s "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+        groups=$(kc "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups?search=tenant-" \
             -H "Authorization: Bearer $token" | \
-            jq -r '.. | objects | select(.name? | startswith("tenant-")) | .name')
+            j '[print(o["name"]) for o in objs(d) if str(o.get("name", "")).startswith("tenant-")]')
 
         if [ -n "$groups" ]; then
             echo "$groups"
@@ -333,25 +330,32 @@ delete_tenant() {
     echo -e "${CYAN}Deleting OpenSearch role: $role_name${NC}"
 
     local response
-    response=$(curl -s -X DELETE "$ES_HOST/_security/role/$role_name" -u "$ES_USER:$ES_PASS")
+    response=$(curl -s -X DELETE "$SEC/roles/$role_name" -u "$ES_USER:$ES_PASS")
 
-    if echo "$response" | grep -q '"found":true'; then
+    if echo "$response" | grep -q '"status":"OK"'; then
         echo -e "${GREEN}✓ Role deleted: $role_name${NC}"
     else
         echo -e "${YELLOW}⚠ Role not found or already deleted${NC}"
     fi
+
+    # the tenant's users only had this role: delete them too
+    local u
+    for u in $(curl -s "$SEC/internalusers" -u "$ES_USER:$ES_PASS" | \
+            j '[print(k) for k, v in d.items() if sys.argv[1] in (v.get("opendistro_security_roles") or [])]' "$role_name"); do
+        curl -s -X DELETE "$SEC/internalusers/$u" -u "$ES_USER:$ES_PASS" > /dev/null && echo -e "${GREEN}✓ User deleted: $u${NC}"
+    done
 
     # Delete Keycloak group
     local token
     token=$(get_keycloak_token 2>/dev/null)
     if [ -n "$token" ]; then
         local group_id
-        group_id=$(curl -s "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+        group_id=$(kc "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups?search=tenant-" \
             -H "Authorization: Bearer $token" | \
-            jq -r ".. | objects | select(.name? == \"tenant-$tenant_id\") | .id" | head -1)
+            j 'print(next((o["id"] for o in objs(d) if o.get("name") == "tenant-" + sys.argv[1]), ""))' "$tenant_id")
 
         if [ -n "$group_id" ] && [ "$group_id" != "null" ]; then
-            curl -s -X DELETE "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups/$group_id" \
+            kc -X DELETE "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups/$group_id" \
                 -H "Authorization: Bearer $token"
             echo -e "${GREEN}✓ Keycloak group deleted: tenant-$tenant_id${NC}"
         fi
@@ -368,14 +372,14 @@ verify_tenant() {
 
     # Check role exists
     local role_response
-    role_response=$(curl -s "$ES_HOST/_security/role/$role_name" -u "$ES_USER:$ES_PASS")
+    role_response=$(curl -s "$SEC/roles/$role_name" -u "$ES_USER:$ES_PASS")
 
     if echo "$role_response" | grep -q "$role_name"; then
         echo -e "${GREEN}✓ Role exists: $role_name${NC}"
 
         # Show role details
         echo -e "${CYAN}Role Configuration:${NC}"
-        echo "$role_response" | jq ".${role_name}.indices[0].query"
+        echo "$role_response" | j 'print(d[sys.argv[1]]["index_permissions"][0].get("dls"))' "$role_name"
     else
         echo -e "${RED}✗ Role not found: $role_name${NC}"
         return 1
@@ -388,7 +392,7 @@ verify_tenant() {
     local doc_count
     doc_count=$(curl -s "$ES_HOST/mule-logs-*/_count" -u "$ES_USER:$ES_PASS" \
         -H "Content-Type: application/json" \
-        -d "{\"query\":{\"term\":{\"tenant_id\":\"$tenant_id\"}}}" | jq '.count')
+        -d "{\"query\":{\"term\":{\"tenant_id\":\"$tenant_id\"}}}" | j 'print(d.get("count", 0))')
 
     echo "Document count: $doc_count"
 
@@ -410,14 +414,14 @@ tenant_info() {
 
     # Role info
     echo -e "${BLUE}OpenSearch Role:${NC}"
-    curl -s "$ES_HOST/_security/role/$role_name" -u "$ES_USER:$ES_PASS" | jq .
+    curl -s "$SEC/roles/$role_name" -u "$ES_USER:$ES_PASS" | j 'print(json.dumps(d, indent=2))'
 
     echo ""
 
     # Users with this role
     echo -e "${BLUE}Users with this role:${NC}"
-    curl -s "$ES_HOST/_security/user" -u "$ES_USER:$ES_PASS" | \
-        jq -r "to_entries[] | select(.value.roles[]? == \"$role_name\") | .key"
+    curl -s "$SEC/internalusers" -u "$ES_USER:$ES_PASS" | \
+        j '[print(k) for k, v in d.items() if sys.argv[1] in (v.get("opendistro_security_roles") or [])]' "$role_name"
 
     # Keycloak info
     local token
@@ -425,53 +429,17 @@ tenant_info() {
     if [ -n "$token" ]; then
         echo ""
         echo -e "${BLUE}Keycloak Group:${NC}"
-        curl -s "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups" \
+        kc "$KEYCLOAK_HOST/auth/admin/realms/$KEYCLOAK_REALM/groups?search=tenant-" \
             -H "Authorization: Bearer $token" | \
-            jq ".. | objects | select(.name? == \"tenant-$tenant_id\")"
+            j '[print(json.dumps(o, indent=2)) for o in objs(d) if o.get("name") == "tenant-" + sys.argv[1]]' "$tenant_id"
     fi
 }
 
 # Initial setup
 setup_multitenancy() {
-    echo -e "${CYAN}Setting up multi-tenancy infrastructure...${NC}"
-    echo ""
-
+    # index templates and base roles: scripts/setup-opensearch.sh applies them on every OpenSearch start
     check_es_connection
-
-    # Create index template
-    echo -e "${CYAN}Creating index template with tenant_id mapping...${NC}"
-
-    local template_file="$PROJECT_ROOT/config/opensearch/templates/mule-logs-template.json"
-    if [ -f "$template_file" ]; then
-        curl -s -X PUT "$ES_HOST/_index_template/mule-logs-template" \
-            -u "$ES_USER:$ES_PASS" \
-            -H "Content-Type: application/json" \
-            -d "@$template_file" | jq .
-        echo -e "${GREEN}✓ Index template created${NC}"
-    else
-        echo -e "${YELLOW}⚠ Template file not found: $template_file${NC}"
-    fi
-
-    # Create base tenant_user role
-    echo -e "${CYAN}Creating base tenant_user role...${NC}"
-
-    local role_mappings="$PROJECT_ROOT/config/opensearch/role-mappings/tenant-role-mapping.json"
-    if [ -f "$role_mappings" ]; then
-        local tenant_user_role=$(jq '.tenant_user_role' "$role_mappings")
-        curl -s -X PUT "$ES_HOST/_security/role/tenant_user" \
-            -u "$ES_USER:$ES_PASS" \
-            -H "Content-Type: application/json" \
-            -d "$tenant_user_role" | jq .
-        echo -e "${GREEN}✓ Base tenant_user role created${NC}"
-    fi
-
-    echo ""
-    echo -e "${GREEN}Multi-tenancy setup complete!${NC}"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Create tenants: ./manage-tenants.sh create <tenant_id>"
-    echo "  2. Configure Mule apps with tenant_id header extraction"
-    echo "  3. Test with: curl -H 'X-Tenant-ID: <tenant_id>' http://localhost:9080/api/v1/status"
+    echo -e "${GREEN}Nothing to do: OpenSearch applies the templates/roles itself (scripts/setup-opensearch.sh).${NC}"
 }
 
 # Main

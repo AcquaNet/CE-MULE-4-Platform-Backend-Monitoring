@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime Manager API</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a78d6'/%3E%3Cpath d='M4 11V5l4 3 4-3v6' stroke='white' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: light; --bg:#f4f5f7; --surface:#fcfcfb; --line:#e2e4e8; --text:#0b0b0b; --text-2:#52514e; --muted:#77766f;
+          --accent:#2a78d6; --code:#eef0f3; --get:#1a7f37; --put:#9a6700; --post:#2a78d6; --delete:#b42626; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --bg:#121211; --surface:#1a1a19; --line:#2e2e2b; --text:#f0efec; --text-2:#c3c2b7;
+      --muted:#9a998f; --accent:#3987e5; --code:#21211f; --get:#4cc26a; --put:#e3a33b; --post:#6aa9f0; --delete:#ef7a7a; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --bg:#121211; --surface:#1a1a19; --line:#2e2e2b; --text:#f0efec; --text-2:#c3c2b7;
+    --muted:#9a998f; --accent:#3987e5; --code:#21211f; --get:#4cc26a; --put:#e3a33b; --post:#6aa9f0; --delete:#ef7a7a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color:var(--accent); }
+  code, pre { font-family:ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:12.5px; }
+  code { background:var(--code); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code); padding:12px; border-radius:8px; overflow:auto; margin:8px 0; }
+  .layout { display:grid; grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
+  nav { background:var(--surface); border-right:1px solid var(--line); padding:20px 14px; position:sticky; top:0; height:100vh; overflow:auto; }
+  nav h1 { font-size:16px; margin:0 0 4px; } nav .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  nav h2 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 4px; }
+  nav a { display:flex; gap:8px; align-items:center; padding:4px 6px; border-radius:6px; text-decoration:none; color:var(--text-2); font-size:13px; }
+  nav a:hover { background:var(--bg); }
+  .m { font:600 10.5px/1 ui-monospace, Consolas, monospace; width:46px; flex:none; }
+  .m.get { color:var(--get); } .m.put { color:var(--put); } .m.post { color:var(--post); } .m.delete { color:var(--delete); }
+  main { padding:28px 32px 64px; max-width:980px; }
+  .intro p { color:var(--text-2); white-space:pre-line; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 4px; }
+  .btn { padding:6px 12px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--text); text-decoration:none; font-size:13px; }
+  h2.tag { margin:36px 0 4px; font-size:20px; } .tagdesc { color:var(--text-2); margin:0 0 12px; }
+  .op { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:14px 0; scroll-margin-top:16px; }
+  .op h3 { margin:0; font-size:15px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .op h3 .path { font-family:ui-monospace, Consolas, monospace; font-weight:600; }
+  .op .summary { color:var(--text-2); margin:4px 0 0; }
+  .op .desc { white-space:pre-line; margin:10px 0 0; }
+  .op h4 { margin:16px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  .req { color:var(--delete); font-size:11px; }
+  .schema { font-size:12.5px; }
+  .schema .f { font-family:ui-monospace, Consolas, monospace; }
+  .schema .t { color:var(--muted); font-family:ui-monospace, Consolas, monospace; font-size:12px; }
+  .schema ul { list-style:none; padding-left:16px; margin:2px 0; border-left:1px solid var(--line); }
+  .schema li { padding:2px 0; }
+  .schema .d { color:var(--text-2); }
+  .status { font-family:ui-monospace, Consolas, monospace; font-weight:600; }
+  @media (max-width: 820px) { .layout { grid-template-columns:1fr; } nav { position:static; height:auto; border-right:none; border-bottom:1px solid var(--line); } main { padding:20px 16px 48px; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav id="nav" aria-label="Endpoints"><h1>Runtime Manager API</h1><div class="sub">Loading…</div></nav>
+  <main id="main"></main>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// `code` and **bold** from the spec's markdown-ish descriptions; everything else is escaped text
+const md = s => esc(s).replace(/^\* /gm, '• ').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
+let spec;
+const ref = r => r.split('/').slice(1).reduce((o, k) => o[k], spec);
+const deref = o => (o && o.$ref ? deref(ref(o.$ref)) : o);
+const slug = (m, p) => `${m}-${p}`.replace(/[^a-z0-9]+/gi, '-');
+
+function typeOf(s) {
+  if (s.$ref) return s.$ref.split('/').pop();
+  if (s.enum) return s.enum.map(v => JSON.stringify(v)).join(' | ');
+  if (s.oneOf) return s.oneOf.map(typeOf).join(' | ') + (s.nullable ? ' | null' : '');
+  if (s.type === 'array') return `${typeOf(s.items)}[]`;
+  if (s.type === 'object' && s.additionalProperties && !s.properties) return `map<string, ${typeOf(s.additionalProperties)}>`;
+  return (s.type || 'object') + (s.format ? ` (${s.format})` : '') + (s.nullable ? ' | null' : '');
+}
+
+function schema(s, depth = 0) {
+  if (!s || depth > 4) return '';
+  const name = s.$ref ? s.$ref.split('/').pop() : null;
+  s = deref(s);
+  if (s.allOf) s = s.allOf.map(deref).reduce((a, b) => ({ ...a, ...b, properties: { ...a.properties, ...b.properties } }), {});
+  const head = name ? `<span class="t">${esc(name)}</span>` : '';
+  if (s.type === 'array') return `${head}<span class="t"> array of</span> ${schema(s.items, depth + 1)}`;
+  if (!s.properties) return `${head || `<span class="t">${esc(typeOf(s))}</span>`}${s.description ? ` <span class="d">${md(s.description)}</span>` : ''}`;
+  const req = new Set(s.required || []);
+  return `${head}<ul>${Object.entries(s.properties).map(([k, v]) => {
+    const d = deref(v), nested = (d.properties || d.allOf || (d.type === 'array' && deref(d.items).properties)) && depth < 3;
+    return `<li><span class="f">${esc(k)}</span>${req.has(k) ? ' <span class="req">required</span>' : ''} <span class="t">${esc(typeOf(v))}</span>
+      ${d.description ? ` <span class="d">— ${md(d.description)}</span>` : ''}${d.default !== undefined ? ` <span class="t">default ${esc(JSON.stringify(d.default))}</span>` : ''}
+      ${nested ? schema(d.type === 'array' ? d.items : v, depth + 1) : ''}</li>`;
+  }).join('')}</ul>`;
+}
+
+function example(s) {
+  s = deref(s);
+  if (!s) return null;
+  if (s.example !== undefined) return s.example;
+  if (s.allOf) return Object.assign({}, ...s.allOf.map(example));
+  if (s.properties) return Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, example(v)]));
+  if (s.type === 'array') return [example(s.items)].filter(v => v != null);
+  if (s.enum) return s.enum[0];
+  return s.default ?? { string: '…', integer: 0, boolean: false, number: 0 }[s.type] ?? null;
+}
+
+function op(path, method, o, shared) {
+  const params = [...(shared || []), ...(o.parameters || [])].map(deref);
+  const body = o.requestBody?.content || {};
+  const base = new URL('..', location.href).href.replace(/\/$/, '');  // the Runtime Manager root
+  const curl = o['x-curl'] || `curl -fsS -X ${method.toUpperCase()} "$RM${path.replace(/\{(\w+)\}/g, (_, n) => (params.find(p => p.name === n)?.schema?.example) || `<${n}>`)}" \\\n  -H "Authorization: Bearer $RM_TOKEN"` +
+    (body['application/json'] ? ` -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(body['application/json'].example ?? example(body['application/json'].schema))}'` : '');
+  return `<section class="op" id="${slug(method, path)}">
+    <h3><span class="m ${method}">${method.toUpperCase()}</span><span class="path">${esc(path)}</span></h3>
+    <p class="summary">${md(o.summary || '')}</p>
+    ${o.description ? `<p class="desc">${md(o.description)}</p>` : ''}
+    ${params.length ? `<h4>Parameters</h4><table><thead><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr></thead><tbody>
+      ${params.map(p => `<tr><td><code>${esc(p.name)}</code>${p.required ? ' <span class="req">required</span>' : ''}</td><td>${esc(p.in)}</td>
+        <td><span class="t">${esc(typeOf(p.schema || {}))}</span>${p.schema?.default !== undefined ? ` <span class="t">default ${esc(JSON.stringify(p.schema.default))}</span>` : ''}</td>
+        <td>${md(p.description || '')}${p.schema?.example !== undefined ? ` <span class="t">e.g. ${esc(p.schema.example)}</span>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${Object.entries(body).map(([ct, b]) => `<h4>Request body · <code>${esc(ct)}</code></h4><div class="schema">${schema(b.schema)}</div>
+      ${b.example ? `<pre>${esc(JSON.stringify(b.example, null, 2))}</pre>` : ''}`).join('')}
+    <h4>Responses</h4><table><tbody>${Object.entries(o.responses || {}).map(([code, r]) => { r = deref(r);
+      const s = r.content && Object.values(r.content)[0]?.schema;
+      return `<tr><td class="status" style="width:60px">${esc(code)}</td><td>${md(r.description)}${s ? `<div class="schema">${schema(s)}</div>` : ''}</td></tr>`; }).join('')}</tbody></table>
+    <h4>Example</h4><pre>${esc(curl.replaceAll('$RM', base))}</pre>
+  </section>`;
+}
+
+fetch('openapi.json').then(r => r.json()).then(s => {
+  spec = s;
+  const ops = [];
+  for (const [path, item] of Object.entries(spec.paths))
+    for (const m of ['get', 'put', 'post', 'delete'])
+      if (item[m]) ops.push({ path, m, o: item[m], shared: item.parameters, tag: item[m].tags?.[0] || 'Other' });
+  const tags = spec.tags.map(t => t.name);
+  document.getElementById('nav').innerHTML = `<h1>${esc(spec.info.title)}</h1><div class="sub">v${esc(spec.info.version)} · OpenAPI ${esc(spec.openapi)}</div>
+    <a href="../">← Runtime Manager</a><a href="openapi.json" download="runtime-manager-openapi.json">⤓ openapi.json</a>` +
+    tags.map(t => `<h2>${esc(t)}</h2>` + ops.filter(x => x.tag === t).map(x =>
+      `<a href="#${slug(x.m, x.path)}"><span class="m ${x.m}">${x.m.toUpperCase()}</span>${esc(x.path.replace('/api', ''))}</a>`).join('')).join('');
+  document.getElementById('main').innerHTML = `<div class="intro"><h1 style="margin:0">${esc(spec.info.title)}</h1>
+    <p>${md(spec.info.description)}</p>
+    <div class="btns"><a class="btn" href="openapi.json" target="_blank" rel="noopener">View openapi.json</a>
+      <a class="btn" href="openapi.json" download="runtime-manager-openapi.json">Download spec</a></div>
+    <p class="sub" style="color:var(--muted)">Import the spec into Postman, Insomnia or an OpenAPI client generator. In the examples set
+      <code>RM_TOKEN</code> to an API token.</p></div>` +
+    tags.map(t => `<h2 class="tag">${esc(t)}</h2><p class="tagdesc">${md(spec.tags.find(x => x.name === t).description)}</p>` +
+      ops.filter(x => x.tag === t).map(x => op(x.path, x.m, x.o, x.shared)).join('')).join('');
+  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+}).catch(e => { document.getElementById('main').textContent = 'Could not load the API spec: ' + e.message; });
+</script>
+</body>
+</html>

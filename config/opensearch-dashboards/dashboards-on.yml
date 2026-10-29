@@ -1,0 +1,20 @@
+# OpenSearch Dashboards with Keycloak sign-in (GATEWAY_AUTH=on; docker-compose.yml mounts dashboards-${GATEWAY_AUTH}.yml).
+# OPENSEARCH_HOSTS / SERVER_BASEPATH / OPENSEARCH_USERNAME+PASSWORD come from the compose environment.
+# OpenSearch accepts the Keycloak ID token (openid_auth_domain, scripts/setup-opensearch.sh): realm role admin =
+# all_access, everyone else reads only their tenant's logs (DLS on the token's tenant_id).
+server.host: "0.0.0.0"
+opensearch.ssl.verificationMode: none
+opensearch.requestHeadersWhitelist: [authorization, securitytenant]
+
+opensearch_security.auth.type: openid
+opensearch_security.openid.connect_url: http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration
+opensearch_security.openid.client_id: dashboards
+opensearch_security.openid.client_secret: ${DASHBOARDS_OIDC_CLIENT_SECRET}
+opensearch_security.openid.scope: openid profile email
+opensearch_security.openid.base_redirect_url: https://localhost:9443/dashboards
+opensearch_security.cookie.password: ${DASHBOARDS_COOKIE_SECRET}
+opensearch_security.cookie.secure: true
+
+opensearch_security.multitenancy.enabled: true
+opensearch_security.multitenancy.tenants.preferred: [Private, Global]
+opensearch_security.readonly_mode.roles: [kibana_read_only]

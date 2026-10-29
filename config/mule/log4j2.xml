@@ -11,8 +11,11 @@
     <Properties>
         <Property name="mule.app.name">demo-opensearch</Property>
         <Property name="mule.env">dev</Property>
-        <Property name="logstash.host">localhost</Property>
-        <Property name="logstash.port">5000</Property>
+        <!-- log ingestion (Fluent Bit). Docker: defaults. CloudHub: set logs.host / logs.port / logs.token as
+             application properties (they become system properties): the gateway host, 9100, LOG_INGEST_TOKEN -->
+        <Property name="logs.host">${sys:logs.host:-log-ingest}</Property>
+        <Property name="logs.port">${sys:logs.port:-5000}</Property>
+        <Property name="logs.token">${sys:logs.token:-${env:LOG_INGEST_TOKEN:-no-token}}</Property>
     </Properties>
 
     <Appenders>
@@ -23,24 +26,25 @@
             <DefaultRolloverStrategy max="10"/>
         </RollingFile>
 
-        <!-- Socket Appender for Logstash (TCP) -->
-        <Socket name="Logstash"
-                host="${logstash.host}"
-                port="${logstash.port}"
+        <!-- Socket Appender for log ingestion (JSON over TCP to Fluent Bit) -->
+        <Socket name="logs"
+                host="${logs.host}"
+                port="${logs.port}"
                 protocol="TCP"
                 reconnectionDelayMillis="5000">
             <JsonLayout compact="true" eventEol="true" properties="true">
-                <KeyValuePair key="auth_token" value="${env:LOGSTASH_AUTH_TOKEN:-no-token}"/>
-                <KeyValuePair key="tenant_id" value="${ctx:tenant_id:-unknown}"/>
+                <KeyValuePair key="auth_token" value="${logs.token}"/>
+                <!-- $$: resolved per event (a single $ is resolved once at startup) -->
+                <KeyValuePair key="tenant_id" value="$${ctx:tenant_id:-unknown}"/>
                 <KeyValuePair key="application" value="${mule.app.name}"/>
                 <KeyValuePair key="environment" value="${mule.env}"/>
                 <KeyValuePair key="log_type" value="mule"/>
             </JsonLayout>
         </Socket>
 
-        <!-- Async Appender wrapping Logstash for better performance -->
-        <Async name="AsyncLogstash" includeLocation="true">
-            <AppenderRef ref="Logstash"/>
+        <!-- Async Appender wrapping the log ingestion socket for better performance -->
+        <Async name="AsyncLogs" includeLocation="true">
+            <AppenderRef ref="logs"/>
         </Async>
     </Appenders>
 
@@ -55,7 +59,7 @@
 
         <AsyncRoot level="INFO">
             <AppenderRef ref="file"/>
-            <AppenderRef ref="AsyncLogstash"/>
+            <AppenderRef ref="AsyncLogs"/>
         </AsyncRoot>
     </Loggers>
 

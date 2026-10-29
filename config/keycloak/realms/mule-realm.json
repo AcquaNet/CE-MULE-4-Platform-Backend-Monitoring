@@ -4,7 +4,11 @@
   "displayName": "Mule Platform",
   "displayNameHtml": "<strong>Mule Platform</strong>",
   "loginTheme": "keycloak",
-  "sslRequired": "none",
+  "sslRequired": "external",
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
   "accessTokenLifespan": 3600,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
@@ -15,13 +19,17 @@
         {
           "name": "tenant-default",
           "attributes": {
-            "tenant_id": ["default"]
+            "tenant_id": [
+              "default"
+            ]
           }
         },
         {
           "name": "tenant-demo",
           "attributes": {
-            "tenant_id": ["demo"]
+            "tenant_id": [
+              "demo"
+            ]
           }
         }
       ]
@@ -35,21 +43,36 @@
       "firstName": "Admin",
       "lastName": "User",
       "attributes": {
-        "tenant_id": ["default"]
+        "tenant_id": [
+          "default"
+        ]
       },
       "credentials": [
         {
           "type": "password",
-          "value": "admin123",
+          "value": "${KEYCLOAK_REALM_ADMIN_PASSWORD}",
           "temporary": false
         }
       ],
-      "realmRoles": ["user", "admin"],
+      "realmRoles": [
+        "default-roles-mule",
+        "user",
+        "admin"
+      ],
       "clientRoles": {
-        "mule-api-gateway": ["api-access"],
-        "dashboards": ["dashboards-user"]
+        "mule-api-gateway": [
+          "api-access"
+        ],
+        "dashboards": [
+          "dashboards-user"
+        ],
+        "realm-management": [
+          "realm-admin"
+        ]
       },
-      "groups": ["/tenants/tenant-default"]
+      "groups": [
+        "/tenants/tenant-default"
+      ]
     },
     {
       "username": "developer",
@@ -58,21 +81,32 @@
       "firstName": "Developer",
       "lastName": "User",
       "attributes": {
-        "tenant_id": ["demo"]
+        "tenant_id": [
+          "demo"
+        ]
       },
       "credentials": [
         {
           "type": "password",
-          "value": "dev123",
+          "value": "${KEYCLOAK_REALM_DEV_PASSWORD}",
           "temporary": false
         }
       ],
-      "realmRoles": ["user"],
+      "realmRoles": [
+        "default-roles-mule",
+        "user"
+      ],
       "clientRoles": {
-        "mule-api-gateway": ["api-access"],
-        "dashboards": ["dashboards-user"]
+        "mule-api-gateway": [
+          "api-access"
+        ],
+        "dashboards": [
+          "dashboards-user"
+        ]
       },
-      "groups": ["/tenants/tenant-demo"]
+      "groups": [
+        "/tenants/tenant-demo"
+      ]
     }
   ],
   "roles": {
@@ -116,20 +150,13 @@
       "description": "APISIX Gateway Client for Mule APIs",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "mule-gateway-secret-12345",
-      "redirectUris": [
-        "http://localhost:9080/*",
-        "http://localhost:9443/*",
-        "http://apisix:9080/*"
-      ],
-      "webOrigins": [
-        "http://localhost:9080",
-        "http://localhost:9443"
-      ],
-      "standardFlowEnabled": true,
+      "secret": "${MULE_GATEWAY_CLIENT_SECRET}",
+      "redirectUris": [],
+      "webOrigins": [],
+      "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": true,
+      "serviceAccountsEnabled": false,
       "publicClient": false,
       "protocol": "openid-connect",
       "attributes": {
@@ -202,15 +229,11 @@
       "description": "OpenSearch Dashboards OpenSearch OIDC Client for SSO",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "${DASHBOARDS_OIDC_CLIENT_SECRET:-dashboards-oidc-secret-12345}",
+      "secret": "${DASHBOARDS_OIDC_CLIENT_SECRET}",
       "redirectUris": [
-        "http://localhost:9080/dashboards/api/security/oidc/callback",
-        "http://localhost:5601/api/security/oidc/callback",
-        "https://localhost:9443/dashboards/api/security/oidc/callback"
+        "https://localhost:9443/dashboards/auth/openid/login"
       ],
       "webOrigins": [
-        "http://localhost:9080",
-        "http://localhost:5601",
         "https://localhost:9443"
       ],
       "standardFlowEnabled": true,
@@ -221,7 +244,7 @@
       "protocol": "openid-connect",
       "attributes": {
         "access.token.lifespan": "3600",
-        "pkce.code.challenge.method": "S256"
+        "post.logout.redirect.uris": "https://localhost:9443/dashboards/*"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -282,9 +305,214 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "runtime-manager",
+      "name": "Runtime Manager",
+      "description": "Runtime Manager UI sign-in (authorization code + PKCE); access needs the realm role in RM_OIDC_ROLE",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${RM_OIDC_CLIENT_SECRET:-runtime-manager-secret-change-me}",
+      "redirectUris": [
+        "https://localhost:9443/runtime-manager/callback"
+      ],
+      "webOrigins": [
+        "https://localhost:9443"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost:9443/runtime-manager/"
+      }
+    },
+    {
+      "clientId": "gateway-sso",
+      "name": "Gateway single sign-on",
+      "description": "APISIX browser sign-in for the home page and the ops UIs without a login of their own (Jaeger, Prometheus, ActiveMQ)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${GATEWAY_SSO_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://localhost:9443/sso/callback"
+      ],
+      "webOrigins": [
+        "https://localhost:9443"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://localhost:9443/"
+      },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "user.attribute": "username"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "user.attribute": "email"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "user.attribute": "tenant_id"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "grafana",
+      "name": "Grafana",
+      "description": "Grafana sign-in (generic OAuth); realm role admin = Grafana Admin, others are refused",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${GRAFANA_OIDC_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://localhost:9443/grafana/login/generic_oauth"
+      ],
+      "webOrigins": [
+        "https://localhost:9443"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://localhost:9443/",
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "user.attribute": "username"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "user.attribute": "email"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "user.attribute": "tenant_id"
+          }
+        }
+      ]
     }
   ],
   "scopeMappings": [],
   "clientScopeMappings": {},
-  "defaultRoles": ["user"]
+  "defaultRoles": [
+    "user"
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false,\"required\":{\"roles\":[\"user\"]},\"validations\":{\"email\":{},\"length\":{\"max\":255}}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false,\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false,\"required\":{\"roles\":[\"user\"]},\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}}},{\"name\":\"tenant_id\",\"displayName\":\"Tenant\",\"validations\":{\"length\":{\"max\":64}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  }
 }

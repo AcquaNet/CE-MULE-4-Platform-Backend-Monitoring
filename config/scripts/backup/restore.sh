@@ -5,12 +5,12 @@
 # This script restores indices from an OpenSearch snapshot.
 #
 # Usage:
-#   ./config/backup/restore.sh <snapshot_name> [indices_pattern]
+#   ./config/scripts/backup/restore.sh <snapshot_name> [indices_pattern]
 #
 # Examples:
-#   ./config/backup/restore.sh snapshot-20241228-120000
-#   ./config/backup/restore.sh snapshot-20241228-120000 "mule-logs-*"
-#   ./config/backup/restore.sh snapshot-20241228-120000 "mule-logs-2024.12.28"
+#   ./config/scripts/backup/restore.sh snapshot-20241228-120000
+#   ./config/scripts/backup/restore.sh snapshot-20241228-120000 "mule-logs-*"
+#   ./config/scripts/backup/restore.sh snapshot-20241228-120000 "mule-logs-2024.12.28"
 #
 
 set -e
@@ -24,7 +24,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/<area>/
 ENV_FILE="$PROJECT_ROOT/.env"
 
 # Check arguments
@@ -54,7 +54,7 @@ set +a
 
 # OpenSearch connection details
 ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
-ES_USER="${ES_USER:-elastic}"
+ES_USER="${ES_USER:-admin}"
 ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
@@ -139,7 +139,7 @@ echo ""
 # Build restore request
 RESTORE_REQUEST=$(cat <<EOF
 {
-  "indices": "${INDICES_PATTERN}",
+  "indices": "${INDICES_PATTERN},-.*",
   "ignore_unavailable": true,
   "include_global_state": false,
   "rename_pattern": "(.+)",
@@ -151,6 +151,9 @@ EOF
 
 echo -e "${GREEN}Starting restore operation...${NC}"
 START_TIME=$(date +%s)
+
+# OpenSearch refuses to restore over an open index: close the matching ones first (never system/dot indices)
+curl -s -X POST -u "${ES_USER}:${ES_PASSWORD}"     "${ES_HOST}/${INDICES_PATTERN},-.*/_close?expand_wildcards=open&ignore_unavailable=true&allow_no_indices=true" > /dev/null
 
 # Execute restore
 RESPONSE=$(curl -s -X POST -u "${ES_USER}:${ES_PASSWORD}" \
@@ -233,5 +236,5 @@ echo "Snapshot: ${SNAPSHOT_NAME}"
 echo "Indices Pattern: ${INDICES_PATTERN}"
 echo ""
 echo "Verify data in OpenSearch Dashboards:"
-echo "  ${BLUE}http://localhost:9080/dashboards${NC}"
+echo -e "  ${BLUE}http://localhost:9080/dashboards${NC}"
 echo ""

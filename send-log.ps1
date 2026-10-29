@@ -8,9 +8,17 @@ param(
     [Parameter(Mandatory=$false)]
     [string]$Message = "Test log message",
 
+    # default: LOG_INGEST_TOKEN from the root .env (never hardcode it)
     [Parameter(Mandatory=$false)]
-    [string]$AuthToken = "8fcrQrMcOyWbn6nJdoFzkTpXQGyOHMJw7qcfUotk2v8="
+    [string]$AuthToken = ""
 )
+
+if (-not $AuthToken) {
+    $envFile = Join-Path $PSScriptRoot ".env"
+    $line = if (Test-Path $envFile) { Select-String -Path $envFile -Pattern '^LOG_INGEST_TOKEN=(.*)$' | Select-Object -First 1 }
+    if (-not $line) { Write-Host "No -AuthToken and no LOG_INGEST_TOKEN in .env" -ForegroundColor Red; exit 1 }
+    $AuthToken = $line.Matches[0].Groups[1].Value.Trim()
+}
 
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 $correlationId = [guid]::NewGuid().ToString().Substring(0,8)
@@ -42,5 +50,5 @@ try {
     Write-Host "Log sent successfully!" -ForegroundColor Green
 } catch {
     Write-Host "Error sending log: $_" -ForegroundColor Red
-    Write-Host "Make sure APISIX and Logstash are running." -ForegroundColor Yellow
+    Write-Host "Make sure APISIX and Fluent Bit (logging profile) are running." -ForegroundColor Yellow
 }

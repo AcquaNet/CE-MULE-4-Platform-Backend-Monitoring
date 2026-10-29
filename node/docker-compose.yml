@@ -1,0 +1,27 @@
+# Runtime Manager worker node: a separate server that hosts Mule pool workers for the platform's Runtime
+# Manager (horizontal scaling). It only runs the node agent; the Runtime Manager creates the workers here.
+# Install: node/install-node.sh (creates node/.env with NODE_TOKEN, starts this, prints how to register).
+name: rm-node
+
+services:
+  rm-node-agent:
+    build: agent
+    image: ce-rm-node-agent:1.0
+    container_name: rm-node-agent
+    environment:
+      NODE_TOKEN: ${NODE_TOKEN:?run node/install-node.sh}
+      # host IP the workers' ports (18000+) are published on: the private address APISIX reaches ("" = all)
+      NODE_BIND_IP: ${NODE_BIND_IP:-}
+    ports:
+      - "${NODE_AGENT_PORT:-7443}:7443"
+    volumes:
+      # the agent forwards an allowlist of Docker API calls (Mule workers only) to this Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # its self-signed certificate (created on first start; the Runtime Manager pins the fingerprint)
+      - ./certs:/certs
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 7443), 3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10

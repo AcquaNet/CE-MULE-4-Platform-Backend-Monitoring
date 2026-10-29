@@ -6,7 +6,7 @@
 # in the .env file. It supports filesystem, S3, Azure, and GCS repositories.
 #
 # Usage:
-#   ./config/backup/configure-backup.sh
+#   ./config/scripts/backup/configure-backup.sh
 #
 # Options:
 #   --force    Delete and recreate repository if it already exists
@@ -24,7 +24,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/<area>/
 ENV_FILE="$PROJECT_ROOT/.env"
 
 # Parse arguments
@@ -55,7 +55,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     echo "Please create .env file first:"
     echo "  cp .env.example .env"
-    echo "  ./config/backup/generate-secrets.sh"
+    echo "  ./install.sh   (creates .env with generated secrets)"
     exit 1
 fi
 
@@ -83,7 +83,7 @@ fi
 
 # OpenSearch connection details
 ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
-ES_USER="${ES_USER:-elastic}"
+ES_USER="${ES_USER:-admin}"
 ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 REPO_TYPE="${BACKUP_REPOSITORY_TYPE:-fs}"
@@ -94,7 +94,7 @@ if ! curl -s -u "${ES_USER}:${ES_PASSWORD}" "${ES_HOST}/_cluster/health" > /dev/
     echo -e "${RED}Error: Cannot connect to OpenSearch at ${ES_HOST}${NC}"
     echo ""
     echo "Please ensure:"
-    echo "  1. OpenSearch is running: docker-compose ps opensearch"
+    echo "  1. OpenSearch is running: docker compose ps opensearch"
     echo "  2. OPENSEARCH_ADMIN_PASSWORD is set correctly in .env"
     echo "  3. ES_HOST is correct (default: http://localhost:9080/opensearch)"
     exit 1
@@ -125,7 +125,7 @@ echo -e "${GREEN}Configuring ${REPO_TYPE} repository...${NC}"
 case "$REPO_TYPE" in
     fs)
         # Filesystem repository
-        REPO_PATH="${SNAPSHOT_REPOSITORY_PATH:-/mnt/opensearch-backups}"
+        REPO_PATH="${SNAPSHOT_REPOSITORY_PATH:-/usr/share/opensearch/data/snapshots}"
         COMPRESS="${BACKUP_COMPRESS:-true}"
 
         echo "  Repository: ${REPO_NAME}"
@@ -297,14 +297,14 @@ echo ""
 echo -e "${GREEN}Next Steps:${NC}"
 echo ""
 echo "  1. Create a manual backup:"
-echo "     ${BLUE}./config/backup/backup.sh${NC}"
+echo -e "     ${BLUE}./config/scripts/backup/backup.sh${NC}"
 echo ""
 echo "  2. Set up automated backups (cron job):"
-echo "     ${BLUE}./config/backup/setup-backup-cron.sh${NC}"
+echo -e "     ${BLUE}./config/scripts/backup/setup-backup-cron.sh${NC}"
 echo ""
 echo "  3. View existing snapshots:"
-echo "     ${BLUE}curl -u ${ES_USER}:****** \"${ES_HOST}/_snapshot/${REPO_NAME}/_all?pretty\"${NC}"
+echo -e "     ${BLUE}curl -u ${ES_USER}:****** \"${ES_HOST}/_snapshot/${REPO_NAME}/_all?pretty\"${NC}"
 echo ""
 echo "  4. Restore from a snapshot:"
-echo "     ${BLUE}./config/backup/restore.sh <snapshot_name>${NC}"
+echo -e "     ${BLUE}./config/scripts/backup/restore.sh <snapshot_name>${NC}"
 echo ""

@@ -1,0 +1,67 @@
+# Jaeger v2 (OpenTelemetry Collector based): OTLP in (4317 gRPC from Mule workers, 4318 HTTP via APISIX /otlp),
+# spans stored in OpenSearch, UI/API on 16686 under /jaeger (APISIX route, admin SSO).
+# Indices keep the v1 names (jaeger-span-YYYY-MM-DD, jaeger-service-...): no prefix, so the ISM retention policy and
+# older traces still match.
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    metrics:
+      level: basic
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888        # Prometheus job jaeger
+    logs:
+      level: info
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+
+  jaeger_query:
+    base_path: /jaeger
+    storage:
+      traces: opensearch
+    http:
+      endpoint: 0.0.0.0:16686
+
+  jaeger_storage:
+    backends:
+      opensearch:
+        opensearch:
+          server_urls: [https://opensearch:9200]
+          auth:
+            basic:
+              username: admin
+              password: ${env:OPENSEARCH_PASSWORD}
+          tls:
+            insecure_skip_verify: true   # OpenSearch's per-install self-signed cert; internal network only
+          indices:
+            spans:    {shards: 1, replicas: 0}   # single node: replicas would leave the cluster yellow
+            services: {shards: 1, replicas: 0}
+            dependencies: {shards: 1, replicas: 0}
+            sampling: {shards: 1, replicas: 0}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: opensearch

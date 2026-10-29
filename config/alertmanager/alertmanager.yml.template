@@ -6,10 +6,8 @@
 # - ALERT_GROUP_WAIT: Wait time before sending initial notification
 # - ALERT_GROUP_INTERVAL: Wait time between notifications for new alerts in group
 # - ALERT_REPEAT_INTERVAL: Time between repeat notifications
-# - ALERT_EMAIL_ENABLED: Enable email notifications
-# - ALERT_SLACK_ENABLED: Enable Slack notifications
-# - ALERT_PAGERDUTY_ENABLED: Enable PagerDuty integration
-# - ALERT_WEBHOOK_ENABLED: Enable webhook notifications
+# - SMTP_HOST, SMTP_PORT, SMTP_FROM_ADDRESS, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS
+# Other receivers (Slack, PagerDuty, webhook): edit the receivers section of this template by hand.
 
 global:
   # Global SMTP configuration
@@ -94,7 +92,10 @@ route:
 receivers:
   # Default receiver (catches all unmatched alerts)
   - name: 'default-receiver'
-    # EMAIL_RECEIVER_SECTION
+    # uncomment to mail every alert (the other receivers work the same way):
+    # email_configs:
+    #   - to: 'ops@example.com'
+    #     send_resolved: true
 
   # Critical alerts receiver
   - name: 'critical-alerts'

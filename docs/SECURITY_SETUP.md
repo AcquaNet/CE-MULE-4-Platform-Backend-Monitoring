@@ -1,403 +1,79 @@
-# Security Setup Guide
-
-Quick reference for configuring secure credentials in the ELK stack.
-
-## Quick Start
-
-### 1. Generate Secure Credentials
-
-```bash
-# Generate all passwords and keys automatically
-./scripts/generate-secrets.sh
-
-# This creates a .env file with secure random values
-```
-
-### 2. Review Generated Credentials
-
-The script will display all generated credentials. **Save these in a secure password manager!**
-
-Example output:
-```
-ElasticSearch Credentials:
-  Username: elastic
-  Password: swCiSuGZvacKT10yfaiSmknDbeSrvttt
-
-Kibana System User:
-  Username: kibana_system
-  Password: VJb66ciegtqPulFWajD8Bw3B4GPo3g5a
-
-APISIX Admin:
-  API Key: 065f4bca05dbdfef37218b738ede4e5f...
-
-Grafana Admin:
-  Username: admin
-  Password: oOFHOWoOrs64U9rOYVxN0l6NTZc1CTcM
-```
-
-### 3. Customize Configuration (Optional)
-
-Edit `.env` to customize settings:
-
-```bash
-# Edit memory allocation
-ES_JAVA_OPTS=-Xms4g -Xmx4g  # Increase ElasticSearch heap
-LS_JAVA_OPTS=-Xms2g -Xmx2g  # Increase Logstash heap
-
-# Set client information
-CLIENT_NAME=acme-corp
-ENVIRONMENT=production
-RETENTION_DAYS=90
-```
-
-### 4. Start the Stack
-
-```bash
-docker-compose up -d
-```
-
----
-
-## Manual Setup
-
-If you prefer to set credentials manually:
-
-### 1. Copy the Template
-
-```bash
-cp .env.example .env
-```
-
-### 2. Generate Individual Passwords
-
-```bash
-# Generate a 32-character password
-openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
-
-# Generate a 48-character encryption key
-openssl rand -base64 48 | tr -d "=+/" | cut -c1-48
-
-# Generate a hex key (for APISIX)
-openssl rand -hex 32
-```
-
-### 3. Edit .env File
-
-Replace all `CHANGE_ME_PLEASE` values with your generated passwords:
-
-```bash
-ELASTIC_PASSWORD=YOUR_GENERATED_PASSWORD
-KIBANA_PASSWORD=YOUR_GENERATED_PASSWORD
-KIBANA_ENCRYPTION_KEY=YOUR_GENERATED_KEY
-# ... etc
-```
-
-### 4. Secure the File
-
-```bash
-chmod 600 .env
-```
-
----
-
-## Production Security Recommendations
-
-For production deployments:
-
-- Create `.env` file with secure passwords (not `CHANGE_ME_PLEASE`)
-- Set restricted permissions on `.env` file: `chmod 600 .env`
-- Verify `.env` file is in `.gitignore` (never commit to version control)
-- Save credentials in secure password manager
-- Change default passwords in all services
-- Enable SSL/TLS (see [SSL_TLS_SETUP.md](SSL_TLS_SETUP.md))
-- Configure firewall to restrict access
-- Configure APISIX IP whitelist (change from `0.0.0.0/0`)
-
----
-
-## Credential Reference
-
-### ElasticSearch
-
-| Purpose | Username | Password Variable |
-|---------|----------|-------------------|
-| Superuser | `elastic` | `ELASTIC_PASSWORD` |
-| Kibana Internal | `kibana_system` | `KIBANA_PASSWORD` |
-
-**Default ElasticSearch Users:**
-- `elastic` - Superuser with all privileges
-- `kibana_system` - Used by Kibana to connect to ElasticSearch
-- `logstash_system` - Used by Logstash (optional, we use elastic user)
-- `apm_system` - Used by APM Server (optional, we use elastic user)
-
-### APISIX
-
-| Purpose | Credential | Variable |
-|---------|-----------|----------|
-| Admin API | API Key | `APISIX_ADMIN_KEY` |
-| Dashboard | Password | `APISIX_DASHBOARD_PASSWORD` |
-
-**APISIX Dashboard Access:**
-- URL: `http://localhost:9000`
-- Username: `admin`
-- Password: Value of `APISIX_DASHBOARD_PASSWORD`
-
-### Grafana
-
-| Purpose | Username | Password Variable |
-|---------|----------|-------------------|
-| Admin User | `admin` | `GRAFANA_ADMIN_PASSWORD` |
-
-**Grafana Access:**
-- URL: `http://localhost:9080/grafana`
-- Username: `admin`
-- Password: Value of `GRAFANA_ADMIN_PASSWORD`
-
----
-
-## Password Rotation
-
-To rotate passwords:
-
-### 1. Generate New Credentials
-
-```bash
-./scripts/generate-secrets.sh --force
-```
-
-### 2. Update ElasticSearch Users
-
-```bash
-# Update kibana_system password
-curl -X POST "http://localhost:9200/_security/user/kibana_system/_password" \
-  -u elastic:${OLD_ELASTIC_PASSWORD} \
-  -H 'Content-Type: application/json' \
-  -d "{\"password\": \"${NEW_KIBANA_PASSWORD}\"}"
-```
-
-### 3. Restart Services
-
-```bash
-docker-compose restart
-```
-
-### 4. Update Credentials in Password Manager
-
-Save the new credentials securely.
-
----
-
-## Troubleshooting
-
-### "Authentication failed" Error
-
-**Symptom:** Cannot access ElasticSearch, Kibana, or Grafana after starting
-
-**Solution:**
-1. Check if `.env` file exists: `ls -la .env`
-2. Verify credentials are set (not `CHANGE_ME_PLEASE`): `cat .env | grep PASSWORD`
-3. Restart services: `docker-compose restart`
-
-### "Invalid encryption key" Error
-
-**Symptom:** Kibana fails to start with encryption key error
-
-**Solution:**
-Encryption keys must be at least 32 characters long:
-
-```bash
-# Generate valid keys
-KIBANA_ENCRYPTION_KEY=$(openssl rand -base64 48 | tr -d "=+/" | cut -c1-48)
-KIBANA_REPORTING_ENCRYPTION_KEY=$(openssl rand -base64 48 | tr -d "=+/" | cut -c1-48)
-
-# Update .env file
-sed -i "s|KIBANA_ENCRYPTION_KEY=.*|KIBANA_ENCRYPTION_KEY=$KIBANA_ENCRYPTION_KEY|" .env
-sed -i "s|KIBANA_REPORTING_ENCRYPTION_KEY=.*|KIBANA_REPORTING_ENCRYPTION_KEY=$KIBANA_REPORTING_ENCRYPTION_KEY|" .env
-```
-
-### ".env file not loaded" Error
-
-**Symptom:** Services start but use default passwords
-
-**Solution:**
-Docker Compose automatically loads `.env` if it's in the same directory as `docker-compose.yml`:
-
-```bash
-# Verify .env is in the correct location
-ls -la .env docker-compose.yml
-
-# Both files should be in the same directory
-```
-
-### "Permission denied" Error
-
-**Symptom:** Cannot read or modify `.env` file
-
-**Solution:**
-```bash
-# Fix permissions
-chmod 600 .env
-```
-
----
-
-## Best Practices
-
-### 1. Never Commit Credentials
-
-The `.env` file is in `.gitignore`. Never use `git add -f .env`!
-
-### 2. Use Strong Passwords
-
-All generated passwords are:
-- 32+ characters long
-- Cryptographically random
-- Contain alphanumeric characters
-
-### 3. Limit Access
-
-Protect the `.env` file:
-```bash
-chmod 600 .env        # Only owner can read/write
-chown root:root .env  # Only root can access (optional)
-```
-
-### 4. Separate Environments
-
-Use different credentials for each environment:
-
-```bash
-# Development
-cp .env .env.dev
-./scripts/generate-secrets.sh --force
-
-# Production
-cp .env .env.prod
-./scripts/generate-secrets.sh --force
-```
-
-Then symlink based on environment:
-```bash
-ln -sf .env.prod .env  # Use production credentials
-```
-
-### 5. Backup Credentials
-
-Store credentials in multiple secure locations:
-- Password manager (1Password, LastPass, BitWarden)
-- Encrypted backup file
-- Secrets management service (HashiCorp Vault, AWS Secrets Manager)
-
-**Never backup credentials in:**
-- Plain text files
-- Email
-- Slack/chat
-- Version control (git)
-- Shared drives without encryption
-
----
-
-## Advanced Configuration
-
-### Using External Secrets Management
-
-#### HashiCorp Vault
-
-```yaml
-# docker-compose.yml
-services:
-  elasticsearch:
-    environment:
-      - ELASTIC_PASSWORD=${VAULT_SECRET_ELASTIC_PASSWORD}
-```
-
-```bash
-# Retrieve from Vault
-export VAULT_SECRET_ELASTIC_PASSWORD=$(vault kv get -field=password secret/elk/elastic)
-```
-
-#### AWS Secrets Manager
-
-```bash
-# Retrieve from AWS
-export ELASTIC_PASSWORD=$(aws secretsmanager get-secret-value \
-  --secret-id elk/elastic/password \
-  --query SecretString \
-  --output text)
-```
-
-### Using Docker Secrets (Swarm Mode)
-
-```yaml
-# docker-compose.yml
-secrets:
-  elastic_password:
-    external: true
-
-services:
-  elasticsearch:
-    secrets:
-      - elastic_password
-    environment:
-      - ELASTIC_PASSWORD_FILE=/run/secrets/elastic_password
-```
-
-```bash
-# Create secret
-echo "your-secure-password" | docker secret create elastic_password -
-```
-
----
-
-## Security Incident Response
-
-If credentials are compromised:
-
-### 1. Immediate Actions
-
-```bash
-# Stop all services
-docker-compose down
-
-# Generate new credentials
-./scripts/generate-secrets.sh --force
-
-# Restart with new credentials
-docker-compose up -d
-```
-
-### 2. Audit Access
-
-```bash
-# Check ElasticSearch access logs
-docker exec elasticsearch cat /usr/share/elasticsearch/logs/elasticsearch.log | grep -i "authentication"
-
-# Check APISIX access logs
-docker exec apisix cat /usr/local/apisix/logs/access.log
-```
-
-### 3. Rotate All Credentials
-
-Follow the "Password Rotation" section above.
-
-### 4. Review Security
-
-- Update firewall rules
-- Enable IP whitelisting
-- Enable SSL/TLS
-- Review user permissions
-- Check for unauthorized indices/data
-
----
-
-## Related Documentation
-
-- **SSL/TLS Setup**: [SSL_TLS_SETUP.md](SSL_TLS_SETUP.md)
-- **Environment Configuration**: `.env.example`
-- **Docker Compose**: `docker-compose.yml`
-- **APISIX Security**: `apisix-config/config/config.yaml`
-
----
-
-**Last Updated:** 2025-12-28
-**Version:** 1.0
+# Security
+
+## Secrets: the root `.env`
+
+`install.sh` (via `config/scripts/setup/generate-secrets.sh`) creates `.env` from `.env.example`, with random
+values for every password, token and key. The file is git-ignored and has mode 600. Compose sets no default
+passwords; some services refuse to start without theirs (`:?` checks). The `ops` password, the OTLP key, the
+gateway client secrets, the session key and the ActiveMQ admin password become random values when unset, so those routes stay
+closed. Keep every secret set, keep `.env` private, and never use `.env.example` values.
+
+## What is reachable
+
+| Exposure | Ports / paths |
+|----------|---------------|
+| Public (all interfaces) | 9443 HTTPS gateway; 9100 log intake (TCP, token in each event) |
+| Host only (127.0.0.1) | 9080 HTTP gateway, 9091 APISIX metrics (no auth), MySQL 3306, ActiveMQ 8161/5672/61616 (clients sign in as `admin` / `ACTIVEMQ_ADMIN_PASSWORD`) |
+| Not published | OpenSearch 9200, Dashboards, Jaeger, Keycloak, Runtime Manager, Prometheus, Grafana, APISIX Control API (9092, container-local) |
+
+On a server, firewall 9443 and 9100 to the clients that need them (e.g. CloudHub's egress IPs). For worker
+nodes, see [node/README.md](../node/README.md#network).
+
+## Who can do what
+
+| Path | Rule |
+|------|------|
+| `/api/*`, per-app routes | Keycloak token for `mule-api-gateway` with role `api-access`, `X-Tenant-ID` from the token, rate limits: [JWT_AUTHENTICATION_GUIDE.md](JWT_AUTHENTICATION_GUIDE.md) |
+| `/` (home page) | Keycloak sign-in (any realm user); the gateway session is shared by `/jaeger`, `/prometheus`, `/activemq` |
+| `/jaeger`, `/prometheus`, `/activemq` | Keycloak realm role `admin` in a token issued to `gateway-sso` (browser) or `mule-api-gateway` (scripts: bearer token); others get 403. `/activemq/api/*` (Jolokia, REST) is blocked |
+| `/grafana` | Keycloak sign-in (client `grafana`), realm role `admin` only; local break-glass `GRAFANA_ADMIN_USER` |
+| `/dashboards` | Keycloak sign-in (client `dashboards`): `admin` sees all, other users only their token's `tenant_id` (DLS) |
+| `/opensearch` | Port 9080 only (404 on 9443). OpenSearch login: `admin` / `OPENSEARCH_ADMIN_PASSWORD`, or tenant users limited by DLS |
+| `/runtime-manager` | Keycloak sign-in with realm role `RM_OIDC_ROLE` (default `admin`); Basic `RM_USER`/`RM_PASSWORD` and API tokens for scripts. Admin only: it holds the Docker socket |
+| `/otlp` | header `x-otlp-token` = `OTLP_INGEST_TOKEN` |
+| TCP 9100 | event field `auth_token` = `LOG_INGEST_TOKEN`, otherwise the event is dropped |
+| `/auth` | Keycloak's own login. Realm `mule`: brute-force protection, `sslRequired` external. The master realm (server admin) answers on 9080 only (404 on 9443) |
+
+`GATEWAY_AUTH=off` (lite installs without Keycloak) removes the token check: `/api/*` is then **open**. `/jaeger`,
+`/prometheus`, `/activemq` fall back to basic auth `ops` / `GATEWAY_OPS_PASSWORD`, Grafana and Dashboards to their
+local logins, and the home page is public.
+
+**OpenSearch** has only the internal user `admin`. It uses its own per-install, self-signed node certificate
+made on the first start, with no demo config, demo users or published demo certificates. Its REST API is
+reachable only through the gateway on 9080 (host loopback). **Keycloak 26** runs in production mode (`start`) with
+realm `mule`; `tenant_id` is declared in its user profile (users can see it, only admins edit it). Gateway SSO
+responses carry `X-Frame-Options: DENY` / `frame-ancestors 'none'`, and a cross-site `/logout` is refused.
+**HTTPS** on 9443 is on by default ([SSL_TLS_SETUP.md](SSL_TLS_SETUP.md)).
+
+## Rotating secrets
+
+Change the value in `.env`, then run `docker compose up -d`, which recreates the services whose environment
+changed. Some secrets are written only on the first initialization of their data volume, and these need an extra
+step:
+
+| Secret | How |
+|--------|-----|
+| `GATEWAY_OPS_PASSWORD` (only with `GATEWAY_AUTH=off`), `OTLP_INGEST_TOKEN` | `.env` + `up -d` (APISIX re-renders). Update external OTLP senders; the Runtime Manager passes the new token to node workers |
+| `LOG_INGEST_TOKEN` | `.env` + `up -d` (Fluent Bit, and the Runtime Manager, whose restart recreates its workers). Update CloudHub's `logs.token` |
+| `RM_PASSWORD` | `.env` + `up -d` |
+| `ACTIVEMQ_ADMIN_PASSWORD` | `.env` + `up -d` (applied on every start; APISIX re-renders the console sign-in) |
+| `GATEWAY_SESSION_SECRET`, `DASHBOARDS_COOKIE_SECRET` | `.env` + `up -d`; signs everyone out of the gateway / Dashboards |
+| `MULE_GATEWAY_CLIENT_SECRET`, `RM_OIDC_CLIENT_SECRET`, `DASHBOARDS_OIDC_CLIENT_SECRET`, `GATEWAY_SSO_CLIENT_SECRET`, `GRAFANA_OIDC_CLIENT_SECRET` | Regenerate in the Keycloak admin console (Clients > Credentials), copy the value to `.env`, then `up -d`. The realm file is imported only into an empty Keycloak DB |
+| `KEYCLOAK_REALM_ADMIN_PASSWORD`, `KEYCLOAK_REALM_DEV_PASSWORD` | Realm import only: afterwards change them in the admin console |
+| `KEYCLOAK_ADMIN_PASSWORD` | Used only when the Keycloak DB is created: afterwards change it in the master realm (9080 only: http://localhost:9080/auth/admin/master/console/) |
+| `KEYCLOAK_DB_PASSWORD` | Postgres first init only: `ALTER USER keycloak PASSWORD '...'` in `keycloak-db`, then `.env` + `up -d` |
+| `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` | MySQL first init only: `ALTER USER` in MySQL, then `.env` |
+| `OPENSEARCH_ADMIN_PASSWORD` | Applied only when the security index is created: changing it means wiping the `opensearch-data` volume (logs and traces are lost; take a snapshot first, see [BACKUP_SETUP.md](BACKUP_SETUP.md)) |
+| `GRAFANA_ADMIN_PASSWORD` | Used only on Grafana's first start: afterwards `docker exec grafana grafana cli admin reset-admin-password '<new>'` |
+| `RM_SECRETS_KEY` | **Don't rotate casually.** It encrypts stored secure app properties and node tokens; with a new key they can't be read and must be re-entered (secure properties per app, tokens per node) |
+
+To regenerate everything on a fresh install (no data yet), run
+`config/scripts/setup/generate-secrets.sh --force`. On an existing install that breaks the first-init secrets
+listed above.
+
+## Further hardening
+
+- Use a public certificate for remote clients, and a domain in `GATEWAY_HOSTNAMES` or your own cert
+  ([SSL_TLS_SETUP.md](SSL_TLS_SETUP.md)).
+- Put the platform and its worker nodes on a private network: APISIX reaches node workers over plain HTTP.
+- 9100 is plain TCP. Restrict it by source IP, or use a VPN for untrusted networks.

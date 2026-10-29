@@ -1,13 +1,15 @@
 #!/bin/sh
 # OpenSearch Setup Script
-# Configures index templates and security roles for multi-tenancy with DLS
+# Configures index templates and security roles for multi-tenancy with DLS.
+# Runs in the background inside the opensearch container on every start (docker-compose.yml);
+# it waits for the cluster and every step is idempotent.
 
 set -e
 
 OPENSEARCH_HOST="${OPENSEARCH_HOST:-opensearch:9200}"
 OPENSEARCH_USER="${OPENSEARCH_USER:-admin}"
-# Demo mode uses admin/admin as default credentials
-OPENSEARCH_PASSWORD="${OPENSEARCH_PASSWORD:-admin}"
+# admin password: OPENSEARCH_ADMIN_PASSWORD from .env (docker-compose.yml passes it in)
+OPENSEARCH_PASSWORD="${OPENSEARCH_PASSWORD:?OPENSEARCH_PASSWORD not set}"
 # Use HTTPS with -k to skip certificate verification (demo mode uses self-signed certs)
 CURL_OPTS="-s -k"
 
@@ -41,8 +43,8 @@ curl $CURL_OPTS -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" "https://$OPENSEARCH_
 # Create index template for mule-logs with tenant_id mapping
 echo ""
 echo "=== Creating Index Template for Mule Logs ==="
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_index_template/mule-logs-template" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_index_template/mule-logs-template" \
     -H "Content-Type: application/json" \
     -d '{
   "index_patterns": ["mule-logs-*"],
@@ -110,8 +112,8 @@ echo ""
 # Create index template for logstash indices
 echo ""
 echo "=== Creating Index Template for Logstash ==="
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_index_template/logstash-template" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_index_template/logstash-template" \
     -H "Content-Type: application/json" \
     -d '{
   "index_patterns": ["logstash-*"],
@@ -140,8 +142,8 @@ echo ""
 echo "=== Creating Base Tenant Role Template ==="
 # Note: This creates a role that uses DLS to filter by tenant_id
 # Individual tenant roles will inherit from this pattern
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_viewer_template" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_viewer_template" \
     -H "Content-Type: application/json" \
     -d '{
   "cluster_permissions": [],
@@ -161,8 +163,8 @@ echo ""
 # Create a sample tenant role with DLS (example: acme-corp)
 echo ""
 echo "=== Creating Sample Tenant Role (acme-corp) with Document-Level Security ==="
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_acme-corp" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_acme-corp" \
     -H "Content-Type: application/json" \
     -d '{
   "cluster_permissions": [],
@@ -183,8 +185,8 @@ echo ""
 # Create a second sample tenant role (example: globex)
 echo ""
 echo "=== Creating Sample Tenant Role (globex) with Document-Level Security ==="
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_globex" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/roles/tenant_globex" \
     -H "Content-Type: application/json" \
     -d '{
   "cluster_permissions": [],
@@ -202,137 +204,45 @@ curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
 }'
 echo ""
 
-# Create internal users for testing
+# Keycloak single sign-on (OpenSearch Dashboards sends the user's ID token): internal users (admin, tenant users of
+# manage-tenants.sh) keep basic auth (order 1: the domain that challenges must come last, or it answers 401 before the
+# token is tried); tokens are checked against realm mule's keys and must be issued to client dashboards (aud), so
+# another client's token can't be replayed here. Token claim roles = backend roles:
+# admin -> all_access (default mapping), user -> sso_tenant_logs (only documents of the token's tenant_id).
+# user also gets kibana_user (Dashboards app access; the static role keeps its old name); the shared Global tenant
+# is read-only for user (one tenant can't change the saved objects everyone sees), its Private tenant stays writable.
 echo ""
-echo "=== Creating Test Users ==="
-
-# Create acme-corp user
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/internalusers/acme_user" \
+echo "=== Keycloak sign-in (openid auth domain) ==="
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/securityconfig/config" \
     -H "Content-Type: application/json" \
-    -d '{
-  "password": "AcmePass123!",
-  "opendistro_security_roles": ["tenant_acme-corp"],
-  "backend_roles": [],
-  "attributes": {
-    "tenant_id": "acme-corp"
-  }
-}'
+    -d '{"dynamic": {"http": {"anonymous_auth_enabled": false}, "authc": {
+  "basic_internal_auth_domain": {"http_enabled": true, "transport_enabled": true, "order": 1,
+    "http_authenticator": {"type": "basic", "challenge": true}, "authentication_backend": {"type": "intern"}},
+  "openid_auth_domain": {"http_enabled": true, "transport_enabled": false, "order": 0,
+    "http_authenticator": {"type": "openid", "challenge": false, "config": {"subject_key": "preferred_username",
+      "roles_key": "roles", "required_audience": "dashboards", "openid_connect_url": "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"}},
+    "authentication_backend": {"type": "noop"}}}}}'
 echo ""
-
-# Create globex user
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/internalusers/globex_user" \
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/roles/sso_tenant_logs" \
     -H "Content-Type: application/json" \
-    -d '{
-  "password": "GlobexPass123!",
-  "opendistro_security_roles": ["tenant_globex"],
-  "backend_roles": [],
-  "attributes": {
-    "tenant_id": "globex"
-  }
-}'
+    -d '{"cluster_permissions": ["cluster_composite_ops_ro"], "index_permissions": [{
+  "index_patterns": ["mule-logs-*", "logstash-*"],
+  "dls": "{\"term\": {\"tenant_id\": \"${attr.jwt.tenant_id}\"}}",
+  "allowed_actions": ["read", "search", "indices:admin/mappings/get", "indices:admin/resolve/index"]}],
+  "tenant_permissions": [{"tenant_patterns": ["global_tenant"], "allowed_actions": ["kibana_all_read"]}]}'
 echo ""
-
-# Map users to roles
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/rolesmapping/sso_tenant_logs" \
+    -H "Content-Type: application/json" -d '{"backend_roles": ["user"]}'
 echo ""
-echo "=== Mapping Users to Roles ==="
-
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/rolesmapping/tenant_acme-corp" \
-    -H "Content-Type: application/json" \
-    -d '{
-  "backend_roles": [],
-  "hosts": [],
-  "users": ["acme_user"]
-}'
+curl $CURL_OPTS -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
+    "https://$OPENSEARCH_HOST/_plugins/_security/api/rolesmapping/kibana_user" \
+    -H "Content-Type: application/json" -d '{"backend_roles": ["kibanauser", "user"]}'
 echo ""
-
-curl -s -X PUT -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/_plugins/_security/api/rolesmapping/tenant_globex" \
-    -H "Content-Type: application/json" \
-    -d '{
-  "backend_roles": [],
-  "hosts": [],
-  "users": ["globex_user"]
-}'
-echo ""
-
-# Insert sample test documents
-echo ""
-echo "=== Inserting Sample Test Documents ==="
-
-# Acme Corp log
-curl -s -X POST -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_doc" \
-    -H "Content-Type: application/json" \
-    -d '{
-  "tenant_id": "acme-corp",
-  "@timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-  "level": "INFO",
-  "message": "Test log from ACME Corp tenant",
-  "application": "mule-api",
-  "log_type": "mule"
-}'
-echo ""
-
-# Globex log
-curl -s -X POST -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_doc" \
-    -H "Content-Type: application/json" \
-    -d '{
-  "tenant_id": "globex",
-  "@timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-  "level": "INFO",
-  "message": "Test log from Globex tenant",
-  "application": "mule-api",
-  "log_type": "mule"
-}'
-echo ""
-
-# Refresh index
-curl -s -X POST -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_refresh"
-echo ""
-
-# Verify DLS is working
-echo ""
-echo "=== Verifying Document-Level Security ==="
-echo ""
-echo "Admin user (should see ALL documents):"
-curl -s -u "$OPENSEARCH_USER:$OPENSEARCH_PASSWORD" \
-    "http://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
-    -H "Content-Type: application/json" \
-    -d '{"query": {"match_all": {}}}' | grep -E '"total"|"tenant_id"'
-
-echo ""
-echo "Acme user (should see ONLY acme-corp documents):"
-curl $CURL_OPTS -u "acme_user:AcmePass123!" \
-    "https://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
-    -H "Content-Type: application/json" \
-    -d '{"query": {"match_all": {}}}' | grep -E '"total"|"tenant_id"'
-
-echo ""
-echo "Globex user (should see ONLY globex documents):"
-curl $CURL_OPTS -u "globex_user:GlobexPass123!" \
-    "https://$OPENSEARCH_HOST/mule-logs-test/_search?pretty" \
-    -H "Content-Type: application/json" \
-    -d '{"query": {"match_all": {}}}' | grep -E '"total"|"tenant_id"'
 
 echo ""
 echo "=== OpenSearch Setup Complete ==="
-echo ""
-echo "Summary:"
-echo "- Index templates created: mule-logs-*, logstash-*"
-echo "- Tenant roles with DLS: tenant_acme-corp, tenant_globex"
-echo "- Test users: acme_user (password: AcmePass123!), globex_user (password: GlobexPass123!)"
-echo ""
-echo "Access URLs:"
-echo "- OpenSearch: http://localhost:9080/opensearch"
-echo "- OpenSearch Dashboards: http://localhost:9080/dashboards"
-echo "- Jaeger UI: http://localhost:9080/jaeger or http://localhost:16686"
-echo ""
-echo "OpenTelemetry Mule 4 Agent Configuration:"
-echo "- OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317"
-echo "- OTEL_SERVICE_NAME=mule-application"
-echo ""
+echo "- Index templates: mule-logs-*, logstash-*"
+echo "- Tenant roles with DLS: tenant_acme-corp, tenant_globex (no users: add them with config/scripts/tenants/)"

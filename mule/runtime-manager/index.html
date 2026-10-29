@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a78d6'/%3E%3Cpath d='M4 11V5l4 3 4-3v6' stroke='white' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --bg:#f4f5f7; --surface:#fcfcfb; --raised:#ffffff; --line:#e2e4e8; --line-strong:#cfd3da;
+    --text:#0b0b0b; --text-2:#52514e; --muted:#77766f; --accent:#2a78d6; --accent-ink:#ffffff;
+    --series-1:#2a78d6; --grid:#ecedef;
+    --good:#0ca30c; --warning:#b77800; --critical:#d03b3b; --good-ink:#006300; --critical-ink:#b42626;
+    --chip-good:#e8f6e8; --chip-warn:#fdf3dc; --chip-bad:#fbe9e9; --chip-neutral:#eef0f3;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg:#121211; --surface:#1a1a19; --raised:#21211f; --line:#2e2e2b; --line-strong:#3c3c38;
+      --text:#f0efec; --text-2:#c3c2b7; --muted:#9a998f; --accent:#3987e5; --accent-ink:#ffffff;
+      --series-1:#3987e5; --grid:#2a2a27;
+      --good:#0ca30c; --warning:#fab219; --critical:#d03b3b; --good-ink:#4cc24c; --critical-ink:#ef7a7a;
+      --chip-good:#16301a; --chip-warn:#352a10; --chip-bad:#3a1a1a; --chip-neutral:#2a2a27;
+      --shadow:none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#121211; --surface:#1a1a19; --raised:#21211f; --line:#2e2e2b; --line-strong:#3c3c38;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#9a998f; --accent:#3987e5; --accent-ink:#ffffff;
+    --series-1:#3987e5; --grid:#2a2a27;
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b; --good-ink:#4cc24c; --critical-ink:#ef7a7a;
+    --chip-good:#16301a; --chip-warn:#352a10; --chip-bad:#3a1a1a; --chip-neutral:#2a2a27;
+    --shadow:none;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display:none !important; }  /* .checks etc. set display, which would beat the attribute */
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  a { color:var(--accent); }
+  button, input, select { font:inherit; color:inherit; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:600; font-size:15px; }
+  .brand svg { flex:none; }
+  header .meta { color:var(--muted); font-size:13px; }
+  header .spacer { flex:1; }
+  .user { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-2); }
+  .avatar { width:28px; height:28px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-weight:600; font-size:12px; }
+
+  .layout { display:grid; grid-template-columns:280px minmax(0,1fr); min-height:calc(100vh - 53px); }
+  aside { border-right:1px solid var(--line); background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:8px; }
+  aside h2 { margin:0 8px 4px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  .app-item { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; align-items:center; padding:10px; border-radius:8px; cursor:pointer; border:1px solid transparent; text-align:left; background:none; width:100%; }
+  .app-item:hover { background:var(--bg); }
+  .app-item[aria-current="true"] { background:var(--raised); border-color:var(--line); box-shadow:var(--shadow); }
+  .app-item .n { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .app-item .s { grid-column:2; font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .dot.ok { background:var(--good); } .dot.warn { background:var(--warning); } .dot.bad { background:var(--critical); }
+  .empty-side { color:var(--muted); font-size:13px; padding:8px; }
+
+  main { padding:20px 24px 48px; min-width:0; }
+  .app-head { display:flex; flex-wrap:wrap; gap:12px 20px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
+  .app-head h1 { margin:0; font-size:22px; }
+  .app-head .sub { color:var(--text-2); margin-top:4px; display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:7px; border:1px solid var(--line-strong); background:var(--raised); cursor:pointer; white-space:nowrap; }
+  .btn:hover { border-color:var(--muted); }
+  a.btn { text-decoration:none; color:var(--text); } a.btn.primary { color:var(--accent-ink); }
+  .btn:disabled { opacity:.55; cursor:progress; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.danger { color:var(--critical-ink); }
+  .btn.small { padding:4px 9px; font-size:13px; }
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:1px 8px; border-radius:999px; font-size:12px; background:var(--chip-neutral); color:var(--text-2); }
+  .badge.good { background:var(--chip-good); color:var(--good-ink); }
+  .badge.warn { background:var(--chip-warn); color:var(--text); }
+  .badge.bad { background:var(--chip-bad); color:var(--critical-ink); }
+  .badge.accent { background:transparent; border:1px solid var(--accent); color:var(--accent); }
+
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+  .tab { padding:8px 14px; border:none; background:none; cursor:pointer; color:var(--text-2); border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab[aria-selected="true"] { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; min-width:0; }
+  .card h3 { margin:0 0 12px; font-size:14px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .card h3 small { font-weight:400; color:var(--muted); }
+  .grid { display:grid; gap:16px; }
+  .tiles { grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); }
+  .two { grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); }
+  .tile .label { color:var(--text-2); font-size:13px; }
+  .tile .value { font-size:28px; font-weight:600; margin-top:4px; }
+  .tile .hint { color:var(--muted); font-size:12px; margin-top:2px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .toolbar .note { color:var(--muted); font-size:13px; }
+  .seg { display:inline-flex; border:1px solid var(--line-strong); border-radius:7px; overflow:hidden; }
+  .seg button { border:none; background:var(--raised); padding:5px 11px; cursor:pointer; border-right:1px solid var(--line); }
+  .seg button:last-child { border-right:none; }
+  .seg button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); }
+
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  td.r, th.r { text-align:right; }
+  tr:last-child td { border-bottom:none; }
+  .wrap { overflow-x:auto; }
+  .mono { font-family:ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:12.5px; }
+  .nw, .badge { white-space:nowrap; }
+  .clip { max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .placeholder { color:var(--muted); padding:18px 4px; text-align:center; }
+
+  .chart { position:relative; }
+  .chart svg { display:block; width:100%; height:auto; overflow:visible; }
+  .chart .axis { fill:var(--muted); font-size:11px; }
+  .chart .gridline { stroke:var(--grid); stroke-width:1; }
+  .chart .baseline { stroke:var(--line-strong); stroke-width:1; }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--text-2); margin-bottom:8px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+  .tip { position:absolute; pointer-events:none; background:var(--raised); border:1px solid var(--line-strong); border-radius:7px; padding:7px 9px; font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,.15); white-space:nowrap; z-index:3; color:var(--text); }
+  .tip b { font-weight:600; }
+
+  form.settings { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); }
+  label.f { display:grid; gap:5px; font-size:13px; color:var(--text-2); }
+  label.f input, label.f select { min-width:0; width:100%; padding:7px 9px; border:1px solid var(--line-strong); border-radius:7px; background:var(--raised); color:var(--text); }
+  .full { grid-column:1 / -1; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0; padding:10px 12px; }
+  legend { color:var(--text-2); font-size:13px; padding:0 4px; }
+  .checks { display:flex; flex-wrap:wrap; gap:8px 18px; }
+  .check { display:inline-flex; gap:7px; align-items:center; cursor:pointer; }
+  .help { color:var(--muted); font-size:12.5px; margin:0; }
+  .form-actions { display:flex; gap:8px; align-items:center; }
+
+  .log { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; max-height:520px; overflow:auto; font-size:12px; white-space:pre-wrap; margin:0; }
+  .log .le { padding:1px 0; border-bottom:1px solid var(--line); }
+  .log .le:last-child { border-bottom:none; }
+  .log .lv-ERROR, .log .lv-FATAL { color:var(--critical-ink); }
+  .log .lv-WARN { color:var(--warning); }
+  .log mark { background:#ffe58a; color:#0b0b0b; border-radius:2px; }
+  .logfind { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px; }
+  .logfind input[type=search] { flex:1 1 320px; min-width:0; padding:7px 9px; border:1px solid var(--line-strong); border-radius:7px; background:var(--raised); color:var(--text); }
+  .logfind select { padding:6px 8px; border:1px solid var(--line-strong); border-radius:7px; background:var(--raised); color:var(--text); }
+  .logfind .bad { color:var(--critical-ink); }
+  .loghelp { margin:0 0 10px; }
+  .loghelp code { font-size:12px; }
+
+  dialog { border:1px solid var(--line); border-radius:12px; padding:0; width:min(720px, calc(100vw - 32px)); background:var(--surface); color:var(--text); }
+  dialog::backdrop { background:rgba(0,0,0,.4); }
+  dialog .d-head { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); }
+  dialog .d-head h2 { margin:0; font-size:16px; }
+  dialog .d-body { padding:18px; }
+
+  #toasts { position:fixed; right:16px; bottom:16px; display:grid; gap:8px; z-index:20; max-width:min(420px, calc(100vw - 32px)); }
+  .toast { background:var(--raised); border:1px solid var(--line-strong); border-left:4px solid var(--accent); border-radius:8px; padding:10px 14px; box-shadow:0 6px 20px rgba(0,0,0,.18); font-size:13px; }
+  .toast.good { border-left-color:var(--good); } .toast.bad { border-left-color:var(--critical); }
+  .toast b { display:block; margin-bottom:2px; }
+
+  .welcome { max-width:560px; margin:60px auto; text-align:center; color:var(--text-2); }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns:1fr; }
+    aside { border-right:none; border-bottom:1px solid var(--line); }
+    main { padding:16px; }
+    .two { grid-template-columns:1fr; }
+    header .meta { display:none; }
+    header { flex-wrap:wrap; gap:8px 16px; }
+    nav.views { order:3; flex-basis:100%; margin-left:0; overflow-x:auto; }
+  }
+  nav.views { display:flex; gap:2px; margin-left:12px; }
+  nav.views a { padding:6px 12px; border-radius:7px; color:var(--text-2); text-decoration:none; }
+  nav.views a[aria-current="page"] { background:var(--bg); color:var(--text); font-weight:600; }
+  .view { display:none; } .view.on { display:block; }
+  .layout.view.on { display:grid; }
+  .page { max-width:1240px; margin:0 auto; padding:20px 24px 48px; }
+  .page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .page-head h1 { margin:0; font-size:22px; } .page-head p { margin:4px 0 0; color:var(--text-2); }
+  .pools { display:grid; gap:16px; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:13px; margin:0 0 12px; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; }
+  .worker-row { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--line); font-size:13px; }
+  .status-line { display:flex; gap:8px; align-items:center; font-size:13px; color:var(--text-2); margin-bottom:12px; min-height:22px; }
+  .spinner { width:12px; height:12px; border:2px solid var(--line-strong); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
+  .updates { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-2); }
+  .seg.small button { padding:3px 9px; font-size:12.5px; }
+  table.props td { padding:5px 6px; } table.props input[type=text], table.props input[type=password] { width:100%; padding:6px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--raised); color:var(--text); font-family:ui-monospace, Consolas, monospace; font-size:12.5px; }
+  .token-box { font-family:ui-monospace, Consolas, monospace; background:var(--bg); border:1px solid var(--line-strong); border-radius:7px; padding:10px; word-break:break-all; }
+  pre.code { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; margin:8px 0 0; }
+  textarea { font:12.5px/1.4 ui-monospace, Consolas, monospace; padding:7px 9px; border:1px solid var(--line-strong); border-radius:7px; background:var(--raised); color:var(--text); width:100%; min-height:90px; }
+  .err-text { color:var(--critical-ink); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="4" fill="var(--accent)"/><path d="M4 11V5l4 3 4-3v6" stroke="#fff" stroke-width="1.6" fill="none"/></svg>
+    Runtime Manager
+  </div>
+  <nav class="views" aria-label="Sections">
+    <a href="#/apps" data-view="apps">Applications</a>
+    <a href="#/pools" data-view="pools">Runtime pools</a>
+    <a href="#/access" data-view="access">API &amp; settings</a>
+  </nav>
+  <span class="meta" id="summary"></span>
+  <span class="spacer"></span>
+  <div class="user" id="user"></div>
+</header>
+
+<div class="layout view" id="view-apps">
+  <aside>
+    <h2>Applications <button class="btn small primary" id="newApp" type="button">+ Deploy</button></h2>
+    <div id="appList"><div class="empty-side">Loading…</div></div>
+  </aside>
+  <main id="main"><div class="welcome">Loading…</div></main>
+</div>
+
+<section class="view page" id="view-pools"></section>
+<section class="view page" id="view-access"></section>
+
+<dialog id="dlg">
+  <div class="d-head"><h2 id="dlgTitle"></h2><button class="btn small" type="button" data-close>Close</button></div>
+  <div class="d-body" id="dlgBody"></div>
+</dialog>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtMs = v => v == null ? '—' : v < 1000 ? `${v < 10 ? v.toFixed(1) : Math.round(v)} ms` : `${(v / 1000).toFixed(2)} s`;
+const fmtPct = v => `${(v * 100).toFixed(v > 0 && v < .01 ? 2 : 1)}%`;
+const fmtNum = v => v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
+const timeOf = ms => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const UPDATES = { auto: ['Auto', 'New builds/releases are deployed automatically'],
+                  notify: ['Notify', 'New builds/releases are flagged here; you deploy them'],
+                  off: ['Off', 'No update checks'] };
+
+let state = { pools: [], apps: [], routing: false };
+let poolData = [], versions = null;
+let me = {};
+let view = 'apps', sel = null, tab = 'overview', minutes = 60, ov = null, logWorker = null, logSource = 'app';
+let logText = '', logFind = {q: '', mode: 'mule', level: '', matchCase: false};
+
+async function api(method, url, body, json = true) {
+  const opts = { method };
+  if (body !== undefined && body !== null) {
+    if (json && !(body instanceof Blob)) { opts.body = JSON.stringify(body); opts.headers = { 'Content-Type': 'application/json' }; }
+    else { opts.body = body; opts.headers = { 'Content-Type': 'application/java-archive' }; }
+  }
+  const r = await fetch(url, opts);
+  if (r.status === 401) { location.href = './'; throw new Error('Signed out'); }
+  const t = await r.text();
+  let j; try { j = JSON.parse(t); } catch { j = null; }
+  if (!r.ok) throw new Error(j?.error || `${r.status} ${r.statusText}`);
+  return j ?? t;
+}
+
+function toast(title, text = '', kind = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.innerHTML = `<b>${esc(title)}</b>${esc(text)}`;
+  $('#toasts').append(el);
+  setTimeout(() => el.remove(), kind === 'bad' ? 9000 : 5000);
+}
+
+function dialog(title, html, onReady) {
+  $('#dlgTitle').textContent = title; $('#dlgBody').innerHTML = html;
+  if (!$('#dlg').open) $('#dlg').showModal();
+  onReady?.($('#dlgBody'));
+}
+$('#dlg').addEventListener('click', e => { if (e.target.closest('[data-close]')) $('#dlg').close(); });
+
+// ---------- views ----------
+function show(v) {
+  view = ['apps', 'pools', 'access'].includes(v) ? v : 'apps';
+  document.querySelectorAll('.view').forEach(el => el.classList.toggle('on', el.id === `view-${view}`));
+  document.querySelectorAll('nav.views a').forEach(a => a.setAttribute('aria-current', a.dataset.view === view ? 'page' : 'false'));
+  if (view === 'pools') loadPools();
+  if (view === 'access') renderAccess();
+}
+window.addEventListener('hashchange', route);
+function route() {
+  const [v, name, t] = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/');
+  show(v || 'apps');
+  if (view === 'apps') {
+    const pick = state.apps.some(a => a.name === name) ? name : sel && state.apps.some(a => a.name === sel) ? sel : state.apps[0]?.name;
+    if (pick) select(pick, ['overview', 'properties', 'logs', 'settings'].includes(t) ? t : tab, false); else { sel = null; renderMain(); }
+  }
+}
+
+// ---------- app list ----------
+function appHealth(a) {
+  const s = Object.values(a.workers);
+  if (!s.length) return ['', 'No running workers'];
+  if (s.includes('FAILED')) return ['bad', `${s.filter(x => x === 'FAILED').length} failed`];
+  if (s.includes('DEPLOYING')) return ['warn', 'Deploying…'];
+  return ['ok', `Running on ${s.length} worker${s.length > 1 ? 's' : ''}`];
+}
+const versionOf = a => a.maven ? (a.maven.build || a.maven.version) : 'uploaded jar';
+const runtimeOf = a => a.runtime ? `Mule ${a.runtime.mule_version} · Java ${a.runtime.java_version}` : 'no runtime';
+
+function renderList() {
+  $('#summary').textContent = `${state.pools.length} pool${state.pools.length === 1 ? '' : 's'} · ${state.apps.length} app${state.apps.length === 1 ? '' : 's'}`;
+  $('#appList').innerHTML = state.apps.map(a => {
+    const [cls, txt] = appHealth(a);
+    return `<button class="app-item" type="button" data-app="${esc(a.name)}" aria-current="${a.name === sel}">
+      <span class="dot ${cls}" aria-hidden="true"></span><span class="n">${esc(a.name)}</span>
+      <span class="s">${esc(versionOf(a))} · ${esc(a.pool)} · ${esc(txt)}${a.maven?.available ? ' · update available' : ''}</span></button>`;
+  }).join('') || '<div class="empty-side">No applications yet.</div>';
+}
+
+$('#appList').addEventListener('click', e => {
+  const b = e.target.closest('[data-app]');
+  if (b) select(b.dataset.app, tab);
+});
+
+function select(name, t, push = true) {
+  if (name !== sel) { ov = null; logWorker = null; propsDraft = null; }
+  sel = name; if (t) tab = t;
+  if (push) history.replaceState(null, '', `#/apps/${encodeURIComponent(name)}/${tab}`);
+  renderList(); renderMain(false);
+  if (tab === 'overview') loadOverview();
+  if (tab === 'logs') loadLog();
+  if (tab === 'properties') loadProps();
+}
+
+// ---------- app detail ----------
+const current = () => state.apps.find(a => a.name === sel);
+
+function renderMain(headOnly = false) {
+  const a = current();
+  if (!a) {
+    $('#main').innerHTML = `<div class="welcome"><h2>No application selected</h2>
+      <p>Pick an application on the left, or deploy a new one.</p></div>`;
+    return;
+  }
+  const m = a.maven;
+  const chips = Object.entries(a.workers).map(([w, s]) => {
+    const k = s === 'STARTED' ? 'good' : s === 'FAILED' ? 'bad' : 'warn';
+    return `<span class="badge ${k}" title="${esc(w)}">${s === 'STARTED' ? '●' : s === 'FAILED' ? '✕' : '◌'} ${esc(w)} · ${esc(s.toLowerCase())}</span>`;
+  }).join('') || '<span class="badge warn">pool has no running workers</span>';
+  const head = `
+    <div class="app-head">
+      <div>
+        <h1>${esc(a.name)}</h1>
+        <div class="sub">
+          <span>${m ? `${esc(m.group)}:${esc(m.artifact)} · <b>${esc(m.build || m.version)}</b>${m.version !== m.build ? ` <span class="badge">${esc(m.version)}</span>` : ''}` : 'uploaded jar'}</span>
+          <a class="badge" href="#/pools" title="Runtime pool: change it in Settings">pool ${esc(a.pool)} · ${esc(runtimeOf(a))}</a>
+          <span class="badge" title="Workers of the pool this app runs on (Settings)">${a.placement == null ? 'all workers' :
+            Array.isArray(a.placement) ? `pinned to ${a.placement.length}` : `${a.targets.length} worker${a.targets.length === 1 ? '' : 's'}`} of ${poolWorkerNames(a.pool).length}</span>
+          ${a.route ? `<span class="badge" title="Gateway route">${esc(a.route.path)}/* → :${a.route.port}</span>` : ''}
+          ${a.properties.length + a.secure.length ? `<span class="badge">${a.properties.length + a.secure.length} properties${a.secure.length ? ` · ${a.secure.length} secure` : ''}</span>` : ''}
+          ${a.deployed ? `<span class="help">deployed ${esc(a.deployed)}</span>` : ''}
+        </div>
+        <div class="sub">${chips}</div>
+        ${m ? `<div class="sub"><span class="updates">Updates
+          <span class="seg small" role="group" aria-label="Update mode">${Object.entries(UPDATES).map(([k, [l, d]]) =>
+            `<button type="button" data-updates="${k}" aria-pressed="${a.updates === k}" title="${esc(d)}">${l}</button>`).join('')}</span>
+          <span class="help">${esc(UPDATES[a.updates]?.[1] || '')}${m.checked ? ` · last checked ${esc(m.checked)}` : ''}</span></span></div>` : ''}
+        ${m?.error ? `<div class="sub"><span class="badge bad">✕ last update check failed</span><span class="help">${esc(m.error)}</span></div>` : ''}
+      </div>
+      <div class="actions">
+        ${m?.available ? `<button class="btn primary" type="button" data-act="update">Update to ${esc(m.available.build)}</button>` : ''}
+        ${m ? `<button class="btn" type="button" data-act="check">Check for updates</button>` : ''}
+        <button class="btn" type="button" data-act="restart" title="Redeploy on its workers (applies properties)">Restart</button>
+        <button class="btn danger" type="button" data-act="delete">Delete</button>
+      </div>
+    </div>`;
+  if (headOnly && $('#head')) { $('#head').innerHTML = head; return; }
+  $('#main').innerHTML = `<div id="head">${head}</div>
+    <div class="tabs" role="tablist">
+      ${['overview', 'properties', 'logs', 'settings'].map(t => `<button class="tab" role="tab" type="button" data-tab="${t}" aria-selected="${t === tab}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}
+    </div>
+    <section id="tabBody"></section>`;
+  if (tab === 'overview') renderOverview();
+  if (tab === 'properties') renderProps();
+  if (tab === 'logs') renderLogs();
+  if (tab === 'settings') renderSettings(a);
+}
+
+$('#main').addEventListener('click', async e => {
+  const t = e.target.closest('[data-tab],[data-act],[data-range],[data-updates]');
+  if (!t) return;
+  if (t.dataset.tab) return select(sel, t.dataset.tab);
+  if (t.dataset.range) { minutes = +t.dataset.range; ov = null; renderOverview(); return loadOverview(); }
+  const a = current();
+  if (t.dataset.updates) return setUpdates(a, t.dataset.updates);
+  const act = t.dataset.act;
+  if (act === 'check') return checkUpdates(a, t);
+  if (act === 'update') return updateNow(a, t);
+  if (act === 'restart') return restart(a, t);
+  if (act === 'delete') return remove(a);
+  if (act === 'refresh-log') return loadLog();
+});
+
+async function setUpdates(a, mode) {
+  try {
+    await api('PUT', `api/apps/${a.name}`, { updates: mode });
+    toast('Updates: ' + UPDATES[mode][0], UPDATES[mode][1] + '.', 'good');
+  } catch (err) { toast('Could not change updates', err.message, 'bad'); }
+  await refresh();
+}
+
+async function checkUpdates(a, btn) {
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    const before = a.maven.build;
+    const m = await api('POST', `api/apps/${a.name}/check`);
+    if (m.error) toast('Update check failed', m.error, 'bad');
+    else if (m.build !== before) toast('Updated', `${a.name} ${before} → ${m.build}, redeploying on its workers`, 'good');
+    else if (m.available) toast('Update available', `${m.available.build} is published. Use “Update” to deploy it${m.updates === 'auto' ? '' : ` (updates: ${m.updates})`}.`);
+    else toast('Up to date', `${a.name} ${m.build} is the newest ${/SNAPSHOT/.test(m.version) ? 'build' : 'release'}.`, 'good');
+  } catch (err) { toast('Update check failed', err.message, 'bad'); }
+  await refresh();
+}
+
+async function updateNow(a, btn) {
+  btn.disabled = true; btn.textContent = 'Updating…';
+  const m = a.maven;
+  try {
+    await api('PUT', `api/apps/${a.name}`, { group: m.group, artifact: m.artifact, version: m.available.version });
+    toast('Deploying', `${a.name} ${m.available.build} on pool ${a.pool}.`, 'good');
+  } catch (err) { toast('Update failed', err.message, 'bad'); }
+  await refresh();
+}
+
+async function restart(a, btn) {
+  btn.disabled = true;
+  try { const r = await api('POST', `api/apps/${a.name}/restart`); toast('Restarting', `${a.name} on ${r.workers.length} worker(s).`, 'good'); }
+  catch (err) { toast('Restart failed', err.message, 'bad'); }
+  await refresh();
+}
+
+async function remove(a) {
+  if (!confirm(`Undeploy ${a.name} from all workers and delete it? This removes its stored jar, properties and gateway route.`)) return;
+  try { await api('DELETE', `api/apps/${a.name}`); toast('Deleted', `${a.name} was undeployed.`, 'good'); sel = null; }
+  catch (err) { toast('Delete failed', err.message, 'bad'); }
+  await refresh();
+}
+
+// ---------- overview ----------
+async function loadOverview() {
+  const name = sel, mins = minutes;
+  try {
+    const o = await api('GET', `api/apps/${name}/overview?minutes=${mins}`);
+    if (name === sel && mins === minutes) { ov = o; if (tab === 'overview') renderOverview(); }
+  } catch (err) { if (name === sel) { ov = { error: err.message }; renderOverview(); } }
+}
+
+function renderOverview() {
+  const body = $('#tabBody'); if (!body) return;
+  const ranges = [[15, '15 min'], [60, '1 hour'], [360, '6 hours'], [1440, '24 hours']];
+  const bar = `<div class="toolbar"><div class="seg" role="group" aria-label="Time range">${ranges.map(([v, l]) =>
+      `<button type="button" data-range="${v}" aria-pressed="${v === minutes}">${l}</button>`).join('')}</div>
+    <span class="note">${ov?.traces?.truncated ? 'Busy app: stats use the newest 1,500 requests in this window. ' : ''}Refreshes every 30 s</span></div>`;
+  if (!ov) { body.innerHTML = bar + '<div class="card placeholder">Loading overview…</div>'; return; }
+  if (ov.error) { body.innerHTML = bar + `<div class="card placeholder">Overview unavailable: ${esc(ov.error)}</div>`; return; }
+  const tr = ov.traces, lg = ov.logs, t = tr.state === 'ok' ? tr.total : null;
+  const off = (src, s, how) => s.state === 'disabled' ? `${src} is not configured for the Runtime Manager.` :
+    `${src} is unreachable (${how}).`;
+  const tiles = t ? `
+    <div class="grid tiles">
+      ${tile('Requests', fmtNum(t.count), `${t.rpm < 10 ? t.rpm.toFixed(2) : Math.round(t.rpm)} per minute`)}
+      ${tile('Error rate', t.count ? fmtPct(t.error_rate) : '—', `${t.errors} failed request${t.errors === 1 ? '' : 's'}`, t.errors ? 'bad' : '')}
+      ${tile('p95 latency', fmtMs(t.p95), `p50 ${fmtMs(t.p50)} · p99 ${fmtMs(t.p99)}`)}
+      ${tile('Log problems', lg.state === 'ok' ? fmtNum((lg.levels.ERROR || 0) + (lg.levels.WARN || 0)) : '—',
+        lg.state === 'ok' ? `${lg.levels.ERROR || 0} errors · ${lg.levels.WARN || 0} warnings` : 'logs unavailable', lg.levels?.ERROR ? 'bad' : '')}
+    </div>` : `<div class="card placeholder">${off('Tracing (Jaeger)', tr, 'enable the tracing profile')} Request stats need it.</div>`;
+
+  const charts = t ? `
+    <div class="grid two" style="margin-top:16px">
+      <div class="card"><h3>Requests <small>per ${bucketLabel(tr.bucket_ms)}</small></h3>
+        <div class="legend"><span><i style="background:var(--series-1)"></i>Successful</span><span><i style="background:var(--critical)"></i>Failed</span></div>
+        <div class="chart" id="chReq"></div></div>
+      <div class="card"><h3>p95 latency <small>per ${bucketLabel(tr.bucket_ms)}</small></h3><div class="chart" id="chLat"></div></div>
+    </div>` : '';
+
+  const workers = workerRows(ov.app, tr, lg);
+  const tables = `
+    <div class="grid two" style="margin-top:16px">
+      <div class="card"><h3>Workers</h3><div class="wrap"><table>
+        <thead><tr><th>Worker</th><th>Status</th><th class="r">Requests</th><th class="r">Errors</th><th class="r">p95</th><th class="r">Log lines</th></tr></thead>
+        <tbody>${workers}</tbody></table></div></div>
+      <div class="card"><h3>Endpoints <small>top ${t ? Math.min(20, tr.endpoints.length) : 0}</small></h3>${t && tr.endpoints.length ? `<div class="wrap"><table>
+        <thead><tr><th>Endpoint</th><th class="r">Requests</th><th class="r">Error rate</th><th class="r">p95</th><th class="r">Avg</th></tr></thead>
+        <tbody>${tr.endpoints.map(e => `<tr><td class="mono clip" title="${esc(e.endpoint)}">${esc(e.endpoint)}</td><td class="r num">${e.count}</td>
+          <td class="r num">${e.errors ? `<span class="badge bad">${fmtPct(e.error_rate)}</span>` : fmtPct(0)}</td><td class="r num">${fmtMs(e.p95)}</td><td class="r num">${fmtMs(e.avg)}</td></tr>`).join('')}</tbody>
+        </table></div>` : `<div class="placeholder">${t ? 'No requests in this window.' : 'Needs tracing.'}</div>`}</div>
+    </div>
+    <div class="grid two" style="margin-top:16px">
+      <div class="card"><h3>Failed &amp; slow requests <small>newest first</small></h3>${t && tr.notable.length ? `<div class="wrap"><table>
+        <thead><tr><th>Time</th><th>Request</th><th class="r">Status</th><th class="r">Duration</th><th>Worker</th><th>Tenant</th></tr></thead>
+        <tbody>${tr.notable.map(r => `<tr><td class="num nw">${new Date(r.start / 1000).toLocaleTimeString()}</td>
+          <td class="mono clip">${tr.link ? `<a href="${esc(tr.link)}/trace/${esc(r.trace)}" target="_blank" rel="noopener" title="Open trace in Jaeger">${esc(r.endpoint)}</a>` : esc(r.endpoint)}</td>
+          <td class="r">${r.error ? `<span class="badge bad">✕ ${r.status || 'error'}</span>` : `<span class="badge">${r.status || '—'}</span>`}</td>
+          <td class="r num nw">${fmtMs(r.ms)}</td><td class="nw">${esc(r.worker)}</td><td class="nw">${esc(r.tenant)}</td></tr>`).join('')}</tbody></table></div>`
+        : `<div class="placeholder">${t ? 'Nothing failed or slow in this window.' : 'Needs tracing.'}</div>`}</div>
+      <div class="card"><h3>Recent log errors &amp; warnings</h3>${lg.state === 'ok' ? (lg.problems.length ? `<div class="wrap"><table>
+        <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Worker</th></tr></thead>
+        <tbody>${lg.problems.map(p => `<tr><td class="num nw">${new Date(p['@timestamp']).toLocaleTimeString()}</td>
+          <td><span class="badge ${p.level === 'ERROR' ? 'bad' : 'warn'}">${p.level === 'ERROR' ? '✕' : '!'} ${esc(p.level)}</span></td>
+          <td class="clip" title="${esc(p.message)}">${esc(p.brief || p.message)}</td><td class="nw">${esc(p.worker_id)}</td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="placeholder">No errors or warnings logged in this window.</div>')
+        : `<div class="placeholder">${off('Log search (OpenSearch)', lg, 'enable the logging profile')}</div>`}</div>
+    </div>
+    ${t && tr.tenants.length && !(tr.tenants.length === 1 && tr.tenants[0].tenant === '-') ? `
+    <div class="card" style="margin-top:16px"><h3>Tenants <small>by requests</small></h3><div class="wrap"><table>
+      <thead><tr><th>Tenant</th><th class="r">Requests</th><th class="r">Error rate</th><th class="r">p95</th></tr></thead>
+      <tbody>${tr.tenants.map(x => `<tr><td>${esc(x.tenant === '-' ? '(no tenant header)' : x.tenant)}</td><td class="r num">${x.count}</td>
+        <td class="r num">${fmtPct(x.error_rate)}</td><td class="r num">${fmtMs(x.p95)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
+
+  body.innerHTML = bar + tiles + charts + tables;
+  if (t) { barChart($('#chReq'), tr.series, tr.bucket_ms); lineChart($('#chLat'), tr.series, tr.bucket_ms); }
+}
+
+function tile(label, value, hint, kind = '') {
+  return `<div class="card tile"><div class="label">${esc(label)}</div>
+    <div class="value num" ${kind === 'bad' ? 'style="color:var(--critical-ink)"' : ''}>${esc(value)}</div><div class="hint">${esc(hint)}</div></div>`;
+}
+const bucketLabel = ms => ms >= 3600000 ? `${Math.round(ms / 3600000)} h` : ms >= 60000 ? `${Math.round(ms / 60000)} min` : `${Math.round(ms / 1000)} s`;
+
+function workerRows(app, tr, lg) {
+  // traces (worker.id) and logs (worker_id) name workers by container, like the pool does
+  const byW = Object.fromEntries((tr.state === 'ok' ? tr.workers : []).map(w => [w.worker, w]));
+  const rows = Object.keys(app?.workers || {}).map(w => {
+    const s = app.workers[w], tw = byW[w];
+    const le = lg.state === 'ok' && lg.workers?.[w] != null ? [w, lg.workers[w]] : null;
+    const badge = s ? `<span class="badge ${s === 'STARTED' ? 'good' : s === 'FAILED' ? 'bad' : 'warn'}">${esc(s.toLowerCase())}</span>` : '<span class="badge">not deployed</span>';
+    return `<tr><td>${esc(w)}</td><td>${badge}</td><td class="r num">${tw ? tw.count : '—'}</td><td class="r num">${tw ? tw.errors : '—'}</td>
+      <td class="r num">${tw ? fmtMs(tw.p95) : '—'}</td><td class="r num">${le ? fmtNum(le[1]) : '—'}</td></tr>`;
+  });
+  return rows.join('') || '<tr><td colspan="6" class="placeholder">The pool has no running workers.</td></tr>';
+}
+
+// ---------- charts (inline SVG, hover tooltips) ----------
+const W = 560, H = 190, PAD = { l: 44, r: 8, t: 8, b: 24 };
+function niceMax(v) { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+function frame(max, fmt, series, bucket) {
+  const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b, y = v => PAD.t + ih - (v / max) * ih;
+  let g = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4;
+    g += `<line class="${i ? 'gridline' : 'baseline'}" x1="${PAD.l}" x2="${W - PAD.r}" y1="${y(v)}" y2="${y(v)}"/>
+          <text class="axis num" x="${PAD.l - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  }
+  const step = Math.ceil(series.length / 5);
+  series.forEach((b, i) => { if (i % step === 0) g += `<text class="axis" x="${PAD.l + (i + .5) * iw / series.length}" y="${H - 6}" text-anchor="middle">${timeOf(b.t)}</text>`; });
+  return { iw, ih, y, g };
+}
+function hover(el, series, bucket, html) {
+  const svg = el.querySelector('svg'), tip = document.createElement('div');
+  tip.className = 'tip'; tip.hidden = true; el.append(tip);
+  const cross = svg.querySelector('.cross');
+  svg.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(series.length - 1, Math.floor((x - PAD.l) / ((W - PAD.l - PAD.r) / series.length))));
+    const b = series[i], cx = PAD.l + (i + .5) * (W - PAD.l - PAD.r) / series.length;
+    if (cross) { cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.style.display = ''; }
+    tip.innerHTML = `<b>${timeOf(b.t)}–${timeOf(b.t + bucket)}</b><br>${html(b)}`;
+    tip.hidden = false;
+    const left = cx / W * r.width;
+    tip.style.left = `${Math.min(left + 12, r.width - tip.offsetWidth)}px`; tip.style.top = '4px';
+  });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; if (cross) cross.style.display = 'none'; });
+}
+function barChart(el, series, bucket) {
+  const max = niceMax(Math.max(...series.map(b => b.count)));
+  const { iw, y, g } = frame(max, v => fmtNum(Math.round(v)), series, bucket);
+  const bw = iw / series.length, w = Math.max(2, bw - 3);
+  let bars = '';
+  series.forEach((b, i) => {
+    if (!b.count) return;
+    const x = PAD.l + i * bw + (bw - w) / 2, ok = b.count - b.errors, base = y(0), r = Math.min(4, w / 2);
+    // successful segment from the baseline, failed stacked on top with a 2px surface gap
+    if (ok) bars += `<rect x="${x}" y="${y(ok)}" width="${w}" height="${base - y(ok)}" fill="var(--series-1)" rx="${b.errors ? 0 : r}"/>`;
+    if (b.errors) bars += `<rect x="${x}" y="${y(b.count)}" width="${w}" height="${Math.max(2, y(ok) - y(b.count) - (ok ? 2 : 0))}" fill="var(--critical)" rx="${r}"/>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Requests per interval">${g}${bars}
+    <line class="cross" y1="${PAD.t}" y2="${H - PAD.b}" stroke="var(--line-strong)" style="display:none"/></svg>`;
+  hover(el, series, bucket, b => `${b.count} requests<br>${b.errors ? `<span style="color:var(--critical-ink)">✕ ${b.errors} failed</span>` : 'no failures'}`);
+}
+function lineChart(el, series, bucket) {
+  const vals = series.map(b => b.p95), max = niceMax(Math.max(0, ...vals.filter(v => v != null)));
+  const { iw, y, g } = frame(max, v => fmtMs(v).replace(' ', ''), series, bucket);
+  const bw = iw / series.length, X = i => PAD.l + (i + .5) * bw;
+  let d = '', pts = '';
+  vals.forEach((v, i) => {
+    if (v == null) { d += ' '; return; }
+    d += `${/\d$/.test(d.trim()) && vals[i - 1] != null ? 'L' : 'M'}${X(i)},${y(v)} `;
+    pts += `<circle cx="${X(i)}" cy="${y(v)}" r="3" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="p95 latency per interval">${g}
+    <path d="${d}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${pts}
+    <line class="cross" y1="${PAD.t}" y2="${H - PAD.b}" stroke="var(--line-strong)" style="display:none"/></svg>`;
+  hover(el, series, bucket, b => b.p95 == null ? 'no requests' : `p95 ${fmtMs(b.p95)} · ${b.count} requests`);
+}
+
+
+// ---------- properties ----------
+let propsDraft = null;  // [{key, value, secure, stored}] while editing; stored = secure value kept server-side
+
+async function loadProps() {
+  const name = sel;
+  try {
+    const p = await api('GET', `api/apps/${name}/properties`);
+    if (name !== sel) return;
+    propsDraft = [...Object.entries(p.properties).map(([key, value]) => ({ key, value, secure: false })),
+                  ...p.secure.map(key => ({ key, value: '', secure: true, stored: true }))];
+    renderProps();
+  } catch (err) { toast('Could not load properties', err.message, 'bad'); }
+}
+
+function renderProps() {
+  const body = $('#tabBody'); if (!body) return;
+  if (!propsDraft) { body.innerHTML = '<div class="card placeholder">Loading properties…</div>'; return; }
+  body.innerHTML = `<div class="card">
+    <h3>Properties <small>injected on deploy; they override the app's own properties (e.g. <code>mule_env</code>, <code>db.host</code>)</small></h3>
+    ${me.secure ? '' : '<p class="help err-text">Secure properties are disabled: set RM_SECRETS_KEY in the root .env.</p>'}
+    <div class="wrap"><table class="props">
+      <thead><tr><th style="width:34%">Name</th><th>Value</th><th style="width:90px">Secure</th><th style="width:40px"></th></tr></thead>
+      <tbody>${propsDraft.map((p, i) => `<tr>
+        <td><input type="text" data-i="${i}" data-f="key" value="${esc(p.key)}" placeholder="db.host" aria-label="Property name" spellcheck="false"></td>
+        <td><input type="${p.secure ? 'password' : 'text'}" data-i="${i}" data-f="value" value="${esc(p.value)}" autocomplete="new-password" spellcheck="false"
+              placeholder="${p.secure && p.stored ? '•••••••• stored (type to replace)' : 'value'}" aria-label="Value of ${esc(p.key || 'new property')}"></td>
+        <td><label class="check"><input type="checkbox" data-i="${i}" data-f="secure" ${p.secure ? 'checked' : ''} ${p.stored ? 'disabled title="Secure values cannot be revealed; delete and re-add to make it plain"' : ''}> secure</label></td>
+        <td><button class="btn small danger" type="button" data-del="${i}" aria-label="Remove ${esc(p.key)}">✕</button></td></tr>`).join('')
+        || '<tr><td colspan="4" class="placeholder">No properties yet.</td></tr>'}</tbody></table></div>
+    <div class="form-actions" style="margin-top:12px;flex-wrap:wrap">
+      <button class="btn small" type="button" data-add="plain">+ Property</button>
+      <button class="btn small" type="button" data-add="secure" ${me.secure ? '' : 'disabled'}>+ Secure property</button>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn primary" type="button" id="saveProps">Save &amp; restart app</button>
+    </div>
+    <p class="help" style="margin-top:10px">Secure values are encrypted at rest and never shown again, not even to admins; Mule receives them as normal properties
+      (e.g. the key for <code>secure-properties:config</code>). Saving redeploys the app on its workers, like CloudHub's “Apply changes”.</p>
+  </div>`;
+  body.oninput = body.onchange = e => {
+    const el = e.target, i = el.dataset.i; if (i == null) return;
+    const p = propsDraft[+i];
+    if (el.dataset.f === 'secure') { p.secure = el.checked; renderProps(); }
+    else p[el.dataset.f] = el.value;
+  };
+  body.onclick = e => {
+    const add = e.target.closest('[data-add]'), del = e.target.closest('[data-del]');
+    if (add) { propsDraft.push({ key: '', value: '', secure: add.dataset.add === 'secure' }); renderProps(); body.querySelector('tbody tr:last-child input').focus(); }
+    if (del) { propsDraft.splice(+del.dataset.del, 1); renderProps(); }
+    if (e.target.id === 'saveProps') saveProps(e.target);
+  };
+}
+
+async function saveProps(btn) {
+  const keys = propsDraft.map(p => p.key.trim());
+  const dup = keys.find((k, i) => k && keys.indexOf(k) !== i);
+  if (keys.some(k => !k)) return toast('Every property needs a name', '', 'bad');
+  if (dup) return toast('Duplicate property', dup, 'bad');
+  const properties = {}, secureProperties = {};
+  for (const p of propsDraft) {
+    if (p.secure) secureProperties[p.key.trim()] = p.stored && p.value === '' ? null : p.value;
+    else properties[p.key.trim()] = p.value;
+  }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('PUT', `api/apps/${sel}/properties`, { properties, secureProperties });
+    toast('Properties saved', `${sel} is restarting with ${keys.length} propert${keys.length === 1 ? 'y' : 'ies'}.`, 'good');
+    await loadProps(); await refresh();
+  } catch (err) { toast('Could not save properties', err.message, 'bad'); btn.disabled = false; btn.textContent = 'Save & restart app'; }
+}
+
+// ---------- logs ----------
+function renderLogs() {
+  const a = current(), ws = Object.keys(a.workers);
+  if (!ws.length) { $('#tabBody').innerHTML = '<div class="card placeholder">The app\'s pool has no running workers.</div>'; return; }
+  logWorker = ws.includes(logWorker) ? logWorker : ws[0];
+  const f = logFind;
+  $('#tabBody').innerHTML = `<div class="toolbar"><div style="display:flex;gap:12px;flex-wrap:wrap">
+      <label class="f" style="grid-auto-flow:column;align-items:center">Worker
+      <select id="logW">${ws.map(w => `<option ${w === logWorker ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select></label>
+      <label class="f" style="grid-auto-flow:column;align-items:center">Log
+      <select id="logS"><option value="app" ${logSource === 'app' ? 'selected' : ''}>Application</option>
+        <option value="runtime" ${logSource === 'runtime' ? 'selected' : ''}>Mule runtime (deployments)</option></select></label></div>
+      <button class="btn small" type="button" data-act="refresh-log">Refresh</button></div>
+    <div class="logfind" role="search">
+      <input id="logQ" type="search" aria-label="Search the log" value="${esc(f.q)}"
+        placeholder="${f.mode === 'regex' ? 'Regular expression, e.g. timeout|refused' : 'Search: words, &quot;exact phrase&quot;, OR, -exclude, level:ERROR, logger:com.acqua*'}">
+      <span class="seg" role="group" aria-label="Search mode">
+        <button type="button" data-logmode="mule" aria-pressed="${f.mode === 'mule'}">Mule search</button>
+        <button type="button" data-logmode="regex" aria-pressed="${f.mode === 'regex'}">Regex</button></span>
+      <select id="logL" aria-label="Priority">${[['', 'All priorities'], ['ERROR', 'ERROR'], ['WARN', 'WARN and above'],
+        ['INFO', 'INFO and above'], ['DEBUG', 'DEBUG and above']].map(([v, l]) => `<option value="${v}" ${v === f.level ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label class="check"><input type="checkbox" id="logC" ${f.matchCase ? 'checked' : ''}> Match case</label>
+      <span class="note" id="logN" aria-live="polite"></span></div>
+    <p class="help loghelp">${f.mode === 'regex' ? 'JavaScript regular expression, tested against each whole entry (stack traces included).'
+      : 'Words must all appear (any order); <code>"exact phrase"</code>, <code>OR</code>, <code>NOT word</code> or <code>-word</code>, '
+      + '<code>*</code> wildcard; fields: <code>level:</code> <code>logger:</code> <code>thread:</code> <code>processor:</code> <code>event:</code> (correlation id).'}
+      Searches the last 2 MB of the log.</p>
+    <div class="log mono" id="log">Loading…</div>`;
+  $('#logW').onchange = e => { logWorker = e.target.value; loadLog(); };
+  $('#logS').onchange = e => { logSource = e.target.value; loadLog(); };
+  let timer;
+  $('#logQ').oninput = e => { f.q = e.target.value; clearTimeout(timer); timer = setTimeout(showLog, 200); };
+  $('#logL').onchange = e => { f.level = e.target.value; showLog(); };
+  $('#logC').onchange = e => { f.matchCase = e.target.checked; showLog(); };
+  document.querySelectorAll('[data-logmode]').forEach(b => b.onclick = () => {
+    f.mode = b.dataset.logmode; renderLogs(); showLog(); $('#logQ').focus(); });
+}
+async function loadLog() {
+  if (!$('#log')) return;
+  try {
+    const t = await api('GET', `api/apps/${sel}/log?worker=${encodeURIComponent(logWorker)}&source=${logSource}&bytes=${2 << 20}`);
+    logText = typeof t === 'string' ? t : JSON.stringify(t);
+    showLog();
+  } catch (err) { logText = ''; $('#log').textContent = err.message; }
+}
+
+// One entry per log event: a line that starts with a level opens it; stack traces and banners stay with it.
+// Mule's layout: LEVEL date time [thread] [processor: path; event: correlationId] logger: message
+const LOG_LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+function logEntries(text) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    const m = /^(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+(\d{4}-\d\d-\d\d[ T][\d:.,]+)\s+\[(.*?)\]\s+(?:\[processor: ([^;\]]*); event: ([^\]]*)\]\s+)?([\w.$-]+):(?:\s|$)/.exec(line)
+      || /^(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s/.exec(line);
+    if (m || !out.length) out.push({text: line, level: m ? m[1].replace('WARNING', 'WARN') : '', thread: m?.[3] || '',
+      processor: m?.[4] || '', event: m?.[5] || '', logger: m?.[6] || ''});
+    else out[out.length - 1].text += '\n' + line;
+  }
+  if (out.length && out[out.length - 1].text === '') out.pop();
+  return out;
+}
+// Search query -> {test(entry), hl: RegExp for highlighting}. regex mode: one JavaScript regex (throws if invalid).
+// mule mode, like Runtime Manager's log search: words are ANDed, "phrase", OR (lower precedence), NOT word / -word,
+// * wildcard, field:value for level (also priority), logger, thread, processor, event; case-insensitive unless matchCase.
+function logMatcher(q, mode, matchCase) {
+  q = q.trim();
+  if (!q) return {test: () => true, hl: null};
+  if (mode === 'regex') {
+    const re = new RegExp(q, matchCase ? '' : 'i');
+    return {test: e => re.test(e.text), hl: new RegExp(q, matchCase ? 'g' : 'gi')};
+  }
+  const pat = s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*?');
+  const groups = [[]];
+  let neg = false;
+  for (let t of q.match(/-?(?:\w+:)?"[^"]*"?|\S+/g) || []) {
+    if (t === 'OR') { groups.push([]); continue; }
+    if (t === 'AND') continue;
+    if (t === 'NOT') { neg = true; continue; }
+    if (t.length > 1 && t[0] === '-') { neg = true; t = t.slice(1); }
+    const fm = /^(level|priority|logger|thread|processor|event):(.*)$/i.exec(t);
+    const field = fm ? fm[1].toLowerCase().replace('priority', 'level') : null;
+    const v = (fm ? fm[2] : t).replace(/^"|"$/g, '');
+    if (v) groups[groups.length - 1].push({field, neg, src: pat(v),
+      re: new RegExp(field === 'level' ? `^${pat(v)}$` : pat(v), matchCase && field !== 'level' ? '' : 'i')});
+    neg = false;
+  }
+  const live = groups.filter(g => g.length), hl = live.flat().filter(c => !c.neg && c.field !== 'level').map(c => c.src);
+  return {test: e => live.some(g => g.every(c => c.re.test(c.field ? e[c.field] : e.text) !== c.neg)),
+          hl: hl.length ? new RegExp(hl.join('|'), matchCase ? 'g' : 'gi') : null};
+}
+function markLog(text, hl) {
+  if (!hl) return esc(text);
+  let out = '', last = 0;
+  for (const m of text.matchAll(hl)) {
+    if (!m[0]) continue;
+    out += esc(text.slice(last, m.index)) + '<mark>' + esc(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
+function showLog() {
+  const box = $('#log'), note = $('#logN');
+  if (!box) return;
+  const f = logFind, all = logEntries(logText);
+  let m;
+  try { m = logMatcher(f.q, f.mode, f.matchCase); note.classList.remove('bad'); }
+  catch (err) { note.textContent = 'Invalid regex: ' + err.message; note.classList.add('bad'); return; }
+  const min = f.level ? LOG_LEVELS.indexOf(f.level) : -1;
+  const hits = all.filter(e => (min < 0 || LOG_LEVELS.indexOf(e.level) >= min) && m.test(e));
+  const shown = hits.slice(-1000);  // ponytail: newest 1000 matches are rendered; narrow the search to see older ones
+  box.innerHTML = shown.length ? shown.map(e => `<div class="le lv-${e.level}">${markLog(e.text, m.hl)}</div>`).join('')
+    : `<span class="placeholder">${all.length ? 'No entries match.' : 'The log is empty.'}</span>`;
+  note.textContent = (f.q || f.level) ? `${hits.length} of ${all.length} entries${hits.length > shown.length ? ` (newest ${shown.length} shown)` : ''}`
+    : `${all.length} entries`;
+  box.scrollTop = 1e9;
+}
+
+// ---------- settings (edit) and deploy ----------
+function poolOptions(selected) {
+  const specs = Object.fromEntries(poolData.map(p => [p.name, p]));
+  return state.pools.map(n => `<option value="${esc(n)}" ${n === selected ? 'selected' : ''}>${esc(n)}${specs[n] ?
+    ` — Mule ${esc(specs[n].mule_version)} · Java ${esc(specs[n].java_version)} · ${specs[n].replicas}×${specs[n].heap_mb} MB` : ''}</option>`).join('');
+}
+
+function formFields(a) {
+  const m = a?.maven || {};
+  const upd = a?.updates || 'notify';
+  return `
+    ${a ? '' : `<label class="f">Application name <input name="name" required pattern="[a-z0-9]([a-z0-9]|-){0,62}" placeholder="orders-api"></label>`}
+    <label class="f">Runtime pool <select name="pool">${poolOptions(a?.pool || 'default')}</select></label>
+    <p class="help full" style="margin-top:-6px">The pool sets the Mule version, Java, heap and JVM options. Moving the app redeploys it on the new pool's workers.
+      <a href="#/pools">Manage pools</a></p>
+    <fieldset class="full" id="workersSet"></fieldset>
+    <fieldset class="full"><legend>Source</legend>
+      <div class="settings" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <label class="f">Maven group <input name="group" value="${esc(m.group)}" placeholder="com.acqua"></label>
+        <label class="f">Artifact <input name="artifact" value="${esc(m.artifact)}" placeholder="ce-mule-base"></label>
+        <label class="f">Version <input name="version" value="${esc(m.version)}" placeholder="1.0.9, RELEASE, LATEST, 1.1.0-SNAPSHOT"></label>
+        <label class="f">…or upload a jar <input name="jar" type="file" accept=".jar"></label>
+      </div>
+      <p class="help" style="margin-top:8px">${a ? 'Leave the source unchanged to keep the current build.' : 'Maven coordinates (resolved with mule/maven-settings.xml) or a <code>…-mule-application.jar</code>.'}</p>
+    </fieldset>
+    <fieldset class="full"><legend>Updates</legend><div class="checks">
+      ${Object.entries(UPDATES).map(([k, [l, d]]) => `<label class="check"><input type="radio" name="updates" value="${k}" ${k === upd ? 'checked' : ''}>
+        <span><b>${l}</b> <span class="help">${esc(d)}</span></span></label>`).join('')}
+    </div><p class="help" style="margin-top:8px">Only for Maven-sourced apps. How often versions are checked is set in <a href="#/access">API &amp; settings</a>.</p></fieldset>
+    ${state.routing ? `<label class="f">Gateway path <input name="path" value="${esc(a?.route?.path)}" placeholder="/api/orders (optional)"></label>
+    <label class="f">App HTTP port <input name="port" value="${esc(a?.route?.port || 8081)}" inputmode="numeric"></label>` : ''}
+    <div class="form-actions full"><button class="btn primary" type="submit">${a ? 'Save changes' : 'Deploy'}</button>
+      ${a ? '<button class="btn" type="reset">Discard changes</button>' : ''}<span class="help" id="formMsg"></span></div>`;
+}
+
+// which workers of the pool: all / a count / specific ones (fine tuning)
+const poolWorkerNames = pool => {
+  const p = poolData.find(x => x.name === pool); if (!p) return [];
+  const nodes = p.nodes || { local: p.replicas }, out = [];
+  for (let i = 1; i <= (nodes.local || 0); i++) out.push(`mule-${pool}-${i}`);
+  Object.keys(nodes).filter(n => n !== 'local').sort().forEach(n => { for (let i = 1; i <= nodes[n]; i++) out.push(`mule-${pool}-${n}-${i}`); });
+  return out;
+};
+
+function renderWorkers(f, a) {
+  const pool = f.pool.value, names = poolWorkerNames(pool);
+  const cur = a && a.pool === pool ? a.placement : null;
+  const mode = Array.isArray(cur) ? 'list' : Number.isInteger(cur) ? 'count' : 'all';
+  const chosen = Array.isArray(cur) ? cur : a && a.pool === pool ? a.targets : names;
+  f.querySelector('#workersSet').innerHTML = `<legend>Workers in pool ${esc(pool)}</legend>
+    <div class="checks">
+      <label class="check"><input type="radio" name="wmode" value="all" ${mode === 'all' ? 'checked' : ''}> All ${names.length}</label>
+      <label class="check"><input type="radio" name="wmode" value="count" ${mode === 'count' ? 'checked' : ''}> A number of them:
+        <input type="number" name="wcount" min="1" max="${Math.max(1, names.length)}" value="${Number.isInteger(cur) ? cur : Math.min(1, names.length) || 1}"
+          style="width:70px;padding:4px 6px;border:1px solid var(--line-strong);border-radius:6px;background:var(--raised);color:var(--text)"></label>
+      <label class="check"><input type="radio" name="wmode" value="list" ${mode === 'list' ? 'checked' : ''}> Specific workers</label>
+    </div>
+    <div class="checks" id="wlist" style="margin-top:8px;padding-left:24px" ${mode === 'list' ? '' : 'hidden'}>
+      ${names.map(w => `<label class="check"><input type="checkbox" name="w" value="${esc(w)}" ${chosen.includes(w) ? 'checked' : ''}>${esc(w)}</label>`).join('')
+        || '<span class="help">This pool has no workers.</span>'}
+    </div>
+    <p class="help" style="margin-top:8px">“A number” picks the least busy workers and keeps the app there; if the pool shrinks it moves to another worker.
+      Specific workers are for fine tuning (the app runs nowhere if those workers are removed). Changing this redeploys the app.</p>`;
+  f.querySelector('#workersSet').onchange = e => { if (e.target.name === 'wmode') f.querySelector('#wlist').hidden = e.target.value !== 'list'; };
+}
+
+function workersValue(f) {
+  const mode = f.querySelector('[name=wmode]:checked')?.value || 'all';
+  if (mode === 'count') return +f.wcount.value;
+  if (mode === 'list') return [...f.querySelectorAll('[name=w]:checked')].map(c => c.value);
+  return 'all';
+}
+
+function wireForm(f, a) {
+  renderWorkers(f, a);
+  f.pool.addEventListener('change', () => renderWorkers(f, a));
+}
+
+function renderSettings(a) {
+  $('#tabBody').innerHTML = `<div class="card"><h3>Settings</h3><form class="settings" id="editForm">${formFields(a)}</form></div>`;
+  wireForm($('#editForm'), a);
+  $('#editForm').addEventListener('submit', e => { e.preventDefault(); submitForm(e.target, a); });
+  $('#editForm').addEventListener('reset', () => setTimeout(() => renderWorkers($('#editForm'), a)));
+}
+
+async function submitForm(f, a) {
+  const name = a ? a.name : f.name.value.trim();
+  const m = a?.maven || {};
+  const body = { pool: f.pool.value, updates: f.updates.value, workers: workersValue(f) };
+  if (Array.isArray(body.workers) && !body.workers.length) return toast('Pick at least one worker', 'or choose “All”.', 'bad');
+  const coords = ['group', 'artifact', 'version'].map(k => f[k].value.trim());
+  const changedSource = !a || coords.join(':') !== [m.group, m.artifact, m.version].map(x => x || '').join(':');
+  if (changedSource && coords[1]) Object.assign(body, { group: coords[0], artifact: coords[1], version: coords[2] });
+  if (f.path) {
+    const path = f.path.value.trim();
+    if (path || a?.route) body.route = path ? { path, port: +f.port.value || 8081 } : null;
+  }
+  const jar = f.jar.files[0] || null;
+  if (!a && !jar && !coords[1]) return toast('Choose a source', 'Give Maven coordinates or upload a jar.', 'bad');
+  const btn = f.querySelector('[type=submit]'); btn.disabled = true;
+  $('#formMsg', f).textContent = jar ? 'Uploading…' : body.artifact ? 'Resolving from Maven…' : 'Saving…';
+  try {
+    if (jar) {  // jar body; the other settings ride along as query parameters
+      const q = new URLSearchParams({ pool: body.pool, workers: Array.isArray(body.workers) ? body.workers.join(',') : body.workers });
+      if (body.route) { q.set('path', body.route.path); q.set('port', body.route.port); }
+      await api('PUT', `api/apps/${name}?${q}`, jar, false);
+    } else await api('PUT', `api/apps/${name}`, body);
+    toast(a ? 'Saved' : 'Deploying', `${name} on pool ${body.pool}.`, 'good');
+    if (!a) $('#dlg').close();
+    await refresh(); location.hash = `#/apps/${encodeURIComponent(name)}/overview`;
+  } catch (err) { toast(a ? 'Save failed' : 'Deploy failed', err.message, 'bad'); }
+  btn.disabled = false; $('#formMsg', f).textContent = '';
+}
+
+$('#newApp').onclick = async () => {
+  if (!poolData.length) await loadPools(false);
+  dialog('Deploy a new application', `<form class="settings" id="deployForm">${formFields(null)}</form>
+    <p class="help" style="margin-top:12px">Properties (including secure ones) are set on the app's Properties tab after the first deploy, or in the same call from a pipeline.</p>`,
+    el => { wireForm($('#deployForm', el), null); $('#deployForm', el).addEventListener('submit', e => { e.preventDefault(); submitForm(e.target, null); }); });
+};
+
+// ---------- runtime pools ----------
+let nodeData = [];
+async function loadPools(render = true) {
+  try { [poolData, nodeData] = await Promise.all([api('GET', 'api/pools').then(r => r.pools), api('GET', 'api/nodes').then(r => r.nodes)]); }
+  catch (err) { if (render) $('#view-pools').innerHTML = `<div class="card placeholder">${esc(err.message)}</div>`; return; }
+  if (render && view === 'pools') renderPools();
+}
+
+function renderPools() {
+  const busy = poolData.some(p => ['working', 'pending'].includes(p.status.state));
+  $('#view-pools').innerHTML = `
+    <div class="page-head"><div><h1>Runtime pools</h1>
+      <p>A pool is a Mule runtime (version, Java, heap, JVM options) run as N worker containers. Apps on a pool share its workers;
+      give an app its own pool when it needs another Mule version, more memory or isolation.</p></div>
+      <button class="btn primary" type="button" id="newPool">+ New pool</button></div>
+    <div class="pools">${poolData.map(p => {
+      const st = p.status, working = ['working', 'pending'].includes(st.state);
+      return `<div class="card">
+        <h3>${esc(p.name)} <small>${p.apps.length} app${p.apps.length === 1 ? '' : 's'}</small></h3>
+        <div class="status-line">${working ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+          <span class="badge ${st.state === 'ready' ? 'good' : st.state === 'error' ? 'bad' : 'warn'}">${st.state === 'ready' ? '●' : st.state === 'error' ? '✕' : '◌'} ${esc(st.state)}</span>
+          <span class="${st.state === 'error' ? 'err-text' : ''}">${esc(st.message || '')}</span></div>
+        <dl class="kv"><dt>Runtime</dt><dd><b>Mule ${esc(p.mule_version)}</b> · Java ${esc(p.java_version)}</dd>
+          <dt>Workers</dt><dd>${p.replicas} × ${p.heap_mb} MB heap${Object.keys(p.nodes || {}).some(n => n !== 'local')
+            ? ` <span class="help">(${Object.entries(p.nodes).map(([n, c]) => `${c} on ${n === 'local' ? 'this server' : n}`).join(', ')})</span>` : ''}</dd>
+          <dt>JVM options</dt><dd class="mono">${p.jvm_options.length ? p.jvm_options.map(esc).join(' ') : '<span class="help">none</span>'}</dd>
+          <dt>Apps</dt><dd>${p.apps.length ? p.apps.map(a => `<a href="#/apps/${encodeURIComponent(a)}/overview">${esc(a)}</a>`).join(', ') : '<span class="help">none</span>'}</dd></dl>
+        ${p.workers.map(w => `<div class="worker-row"><span class="mono">${esc(w.name)}${w.node && w.node !== 'local' ? ` <span class="badge">${esc(w.node)}</span>` : ''}</span>
+          <span class="badge ${w.state !== 'running' ? 'bad' : w.health === 'healthy' ? 'good' : w.health === 'unhealthy' ? 'bad' : 'warn'}">${esc(w.state === 'running' ? (w.health || 'running') : w.state)}</span></div>`).join('')
+          || '<div class="worker-row"><span class="help">no workers</span></div>'}
+        <div class="form-actions" style="margin-top:12px">
+          <button class="btn small" type="button" data-edit-pool="${esc(p.name)}">Edit</button>
+          ${st.state === 'error' ? `<button class="btn small" type="button" data-retry="${esc(p.name)}">Retry</button>` : ''}
+          <button class="btn small danger" type="button" data-del-pool="${esc(p.name)}" ${p.apps.length ? 'disabled title="Move or delete its apps first"' : ''}>Delete</button>
+        </div></div>`;
+    }).join('')}</div>
+    <div class="page-head" style="margin-top:28px"><div><h2 style="margin:0;font-size:18px">Nodes</h2>
+      <p>Other servers that host pool workers (horizontal scaling). Run <code>node/install-node.sh</code> on the server, then add it here
+      with what it prints and give pools workers on it.</p></div>
+      <button class="btn" type="button" id="newNode">+ Add node</button></div>
+    <div class="card"><div class="wrap"><table>
+      <thead><tr><th>Node</th><th>Status</th><th>Docker</th><th class="r">CPUs</th><th class="r">Memory</th><th class="r">Workers</th><th>Pools</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>local</b> <span class="help">this server</span></td><td><span class="badge good">● ready</span></td><td colspan="3" class="help">the platform's own Docker</td>
+          <td class="r num">${poolData.reduce((n, p) => n + p.workers.filter(w => (w.node || 'local') === 'local').length, 0)}</td>
+          <td>${poolData.filter(p => (p.nodes || { local: 1 }).local).map(p => esc(p.name)).join(', ') || '<span class="help">none</span>'}</td><td></td></tr>
+        ${nodeData.map(n => { const st = n.status || {}, i = st.info || {};
+          return `<tr><td><b>${esc(n.name)}</b><br><span class="help mono">${esc(n.address)}</span></td>
+          <td>${st.ok ? '<span class="badge good">● reachable</span>' : `<span class="badge bad" title="${esc(st.error || '')}">✕ unreachable</span><br><span class="help">${esc((st.error || '').slice(0, 90))}</span>`}</td>
+          <td>${esc(i.docker || '—')}</td><td class="r num">${i.cpus ?? '—'}</td><td class="r num">${i.memory_mb ? (i.memory_mb / 1024).toFixed(1) + ' GB' : '—'}</td>
+          <td class="r num">${n.workers.length}</td><td>${n.pools.map(esc).join(', ') || '<span class="help">none</span>'}</td>
+          <td class="r nw"><button class="btn small" type="button" data-edit-node="${esc(n.name)}">Edit</button>
+            <button class="btn small danger" type="button" data-del-node="${esc(n.name)}" ${n.pools.length ? 'disabled title="Move its pools\' workers first"' : ''}>Remove</button></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="help" style="margin-top:8px">Workers on a node publish ports 8081-8090 on it (APISIX reaches them there) and send logs and traces back
+        through the gateway. Nodes need a private network to the platform: APISIX talks plain HTTP to workers.</p></div>`;
+  $('#newPool').onclick = () => poolForm(null);
+  $('#newNode').onclick = () => nodeForm(null);
+  $('#view-pools').onclick = async e => {
+    const ed = e.target.closest('[data-edit-pool]'), rt = e.target.closest('[data-retry]'), dl = e.target.closest('[data-del-pool]');
+    const en = e.target.closest('[data-edit-node]'), dn = e.target.closest('[data-del-node]');
+    if (en) nodeForm(nodeData.find(n => n.name === en.dataset.editNode));
+    if (dn && confirm(`Remove node ${dn.dataset.delNode}? (Its Docker and agent keep running; the Runtime Manager stops using it.)`)) {
+      try { await api('DELETE', `api/nodes/${dn.dataset.delNode}`); toast('Node removed', dn.dataset.delNode, 'good'); }
+      catch (err) { toast('Remove failed', err.message, 'bad'); }
+      loadPools();
+    }
+    if (ed) poolForm(poolData.find(p => p.name === ed.dataset.editPool));
+    if (rt) { await api('POST', `api/pools/${rt.dataset.retry}/reconcile`).catch(err => toast('Retry failed', err.message, 'bad')); loadPools(); }
+    if (dl && confirm(`Delete pool ${dl.dataset.delPool} and its worker containers?`)) {
+      try { await api('DELETE', `api/pools/${dl.dataset.delPool}`); toast('Pool deleted', dl.dataset.delPool, 'good'); }
+      catch (err) { toast('Delete failed', err.message, 'bad'); }
+      loadPools();
+    }
+  };
+  clearTimeout(renderPools.t);
+  if (busy && view === 'pools') renderPools.t = setTimeout(loadPools, 3000);
+}
+
+async function poolForm(p) {
+  if (!versions) {
+    try { versions = await api('GET', 'api/runtime/versions'); }
+    catch (err) { versions = { versions: [], java: {}, error: err.message }; }
+  }
+  const vs = versions.versions.length ? versions.versions : [p?.mule_version || '4.12.0'];
+  const cur = p?.mule_version || versions.release || vs[0];
+  const javaFor = v => versions.java[v] || (/^4\.(9|1\d)\./.test(v) ? ['17'] : ['8', '11', '17']);
+  dialog(p ? `Edit pool ${p.name}` : 'New runtime pool', `<form class="settings" id="poolForm">
+    ${p ? '' : '<label class="f">Pool name <input name="name" required pattern="[a-z0-9]([a-z0-9]|-){0,29}" placeholder="legacy-44"></label>'}
+    <label class="f">Mule version <select name="mule_version">${vs.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+    <label class="f">Java <select name="java_version"></select></label>
+    <label class="f">Heap per worker (MB) <input name="heap_mb" type="number" min="256" max="65536" step="128" value="${p?.heap_mb || 1024}"></label>
+    <fieldset class="full"><legend>Workers per server</legend><div class="checks">
+      ${[{ name: 'local', label: 'this server' }, ...nodeData.map(n => ({ name: n.name, label: n.name }))].map(n =>
+        `<label class="check">${esc(n.label)} <input type="number" data-node="${esc(n.name)}" min="0" max="20"
+          value="${p ? ((p.nodes || { local: p.replicas })[n.name] || 0) : (n.name === 'local' ? 1 : 0)}"
+          style="width:70px;padding:4px 6px;border:1px solid var(--line-strong);border-radius:6px;background:var(--raised);color:var(--text)"></label>`).join('')}
+      </div><p class="help" style="margin-top:8px">${nodeData.length ? 'Workers on a node build the runtime image there first (a few minutes).' : 'Add nodes below the pools to spread workers over other servers.'}</p></fieldset>
+    <label class="f full">JVM options <textarea name="jvm_options" placeholder="-XX:+UseG1GC&#10;-Dmy.flag=true" spellcheck="false">${esc((p?.jvm_options || []).join('\n'))}</textarea>
+      <span class="help">One option per line, no spaces. Applies to every app on the pool; per-app settings belong in app properties.</span></label>
+    ${versions.error ? `<p class="help err-text full">MuleSoft's version list is unavailable (${esc(versions.error)}).</p>` : ''}
+    <p class="help full">${p ? 'Saving replaces the workers one at a time (rolling) and redeploys their apps; a new Mule/Java combination first builds its runtime image (a few minutes).'
+      : 'Workers start once the runtime image is built (a few minutes for a new Mule/Java combination).'}</p>
+    <div class="form-actions full"><button class="btn primary" type="submit">${p ? 'Save & roll out' : 'Create pool'}</button><span class="help" id="poolMsg"></span></div>
+  </form>`, el => {
+    const f = $('#poolForm', el);
+    const fillJava = () => { const js = javaFor(f.mule_version.value); const keep = p?.java_version;
+      f.java_version.innerHTML = js.map(j => `<option ${j === (js.includes(keep) ? keep : js[js.length - 1]) ? 'selected' : ''}>${j}</option>`).join(''); };
+    f.mule_version.onchange = fillJava; fillJava();
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const name = p ? p.name : f.name.value.trim();
+      const nodes = Object.fromEntries([...f.querySelectorAll('[data-node]')].map(i => [i.dataset.node, +i.value || 0]));
+      const body = { mule_version: f.mule_version.value, java_version: f.java_version.value, heap_mb: +f.heap_mb.value,
+                     nodes, jvm_options: f.jvm_options.value.split('\n').map(s => s.trim()).filter(Boolean) };
+      body.replicas = Object.values(nodes).reduce((a, b) => a + b, 0);
+      f.querySelector('[type=submit]').disabled = true; $('#poolMsg', f).textContent = 'Saving…';
+      try {
+        await api('PUT', `api/pools/${name}`, body);
+        toast(p ? 'Rolling out' : 'Pool created', `${name}: Mule ${body.mule_version} / Java ${body.java_version}, ${body.replicas} × ${body.heap_mb} MB.`, 'good');
+        $('#dlg').close(); await refresh(); loadPools();
+      } catch (err) { toast('Pool not saved', err.message, 'bad'); f.querySelector('[type=submit]').disabled = false; $('#poolMsg', f).textContent = ''; }
+    };
+  });
+}
+
+function nodeForm(n) {
+  dialog(n ? `Edit node ${n.name}` : 'Add a node', `<form class="settings" id="nodeForm">
+    <p class="help full" style="margin:0">On the other server run <code>node/install-node.sh</code>; it prints these values.</p>
+    ${n ? '' : '<label class="f">Name <input name="name" required pattern="[a-z0-9]([a-z0-9]|-){0,29}" placeholder="node-b"></label>'}
+    <label class="f">Address <input name="address" required placeholder="https://10.0.0.21:7443" value="${esc(n?.address)}"></label>
+    <label class="f">Token <input name="token" type="password" autocomplete="new-password" ${n ? 'placeholder="•••••••• stored (type to replace)"' : 'required'}></label>
+    <label class="f full">Fingerprint <input name="fingerprint" required placeholder="sha256:…" value="${esc(n?.fingerprint)}" spellcheck="false"></label>
+    <label class="f full">Gateway <input name="gateway" required placeholder="10.0.0.10" value="${esc(n?.gateway)}">
+      <span class="help">The platform's address as that server reaches it (logs to :9100, traces to :9443/otlp). It must be in the gateway
+      certificate: add it to <code>GATEWAY_HOSTNAMES</code> in the platform's .env.</span></label>
+    <div class="form-actions full"><button class="btn primary" type="submit">${n ? 'Save' : 'Connect & add'}</button><span class="help" id="nodeMsg"></span></div>
+  </form>`, el => {
+    const f = $('#nodeForm', el);
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const name = n ? n.name : f.name.value.trim();
+      const body = { address: f.address.value.trim(), fingerprint: f.fingerprint.value.trim(), gateway: f.gateway.value.trim() };
+      if (f.token.value) body.token = f.token.value;
+      f.querySelector('[type=submit]').disabled = true; $('#nodeMsg', f).textContent = 'Connecting…';
+      try {
+        const r = await api('PUT', `api/nodes/${name}`, body);
+        toast(n ? 'Node saved' : 'Node added', `${name}: Docker ${r.info.docker}, ${r.info.cpus} CPUs, ${(r.info.memory_mb / 1024).toFixed(1)} GB.`, 'good');
+        $('#dlg').close(); loadPools();
+      } catch (err) { toast('Node not saved', err.message, 'bad'); f.querySelector('[type=submit]').disabled = false; $('#nodeMsg', f).textContent = ''; }
+    };
+  });
+}
+
+// ---------- API & settings ----------
+async function renderAccess() {
+  let tokens = [], cfg = {};
+  try { [tokens, cfg] = await Promise.all([api('GET', 'api/tokens').then(r => r.tokens), api('GET', 'api/settings')]); }
+  catch (err) { $('#view-access').innerHTML = `<div class="card placeholder">${esc(err.message)}</div>`; return; }
+  const base = new URL('.', location.href).href.replace(/\/$/, '');  // e.g. https://localhost:9443/runtime-manager
+  $('#view-access').innerHTML = `
+    <div class="page-head"><div><h1>API &amp; settings</h1><p>Tokens let pipelines deploy apps, set properties and manage pools over the REST API.</p></div>
+      <div class="actions"><a class="btn primary" href="api/docs" target="_blank" rel="noopener">API documentation</a>
+        <a class="btn" href="api/openapi.json" target="_blank" rel="noopener">OpenAPI spec</a>
+        <a class="btn" href="api/openapi.json" download="runtime-manager-openapi.json">Download spec</a></div></div>
+    <div class="grid two">
+      <div class="card"><h3>API tokens</h3>
+        <div class="wrap"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+          <tbody>${tokens.map(t => `<tr><td>${esc(t.name)}</td><td class="nw">${esc(t.created)}</td><td class="nw">${esc(t.last_used || 'never')}</td>
+            <td class="r"><button class="btn small danger" type="button" data-revoke="${esc(t.id)}">Revoke</button></td></tr>`).join('')
+            || '<tr><td colspan="4" class="placeholder">No tokens yet.</td></tr>'}</tbody></table></div>
+        <form class="form-actions" id="tokenForm" style="margin-top:12px"><input name="name" required maxlength="60" placeholder="Token name, e.g. gitlab-orders-pipeline"
+          style="flex:1;padding:7px 9px;border:1px solid var(--line-strong);border-radius:7px;background:var(--raised);color:var(--text)">
+          <button class="btn primary" type="submit">Create token</button></form>
+        <p class="help" style="margin-top:8px">A token can do everything except manage tokens. It is shown once; only its hash is stored.</p>
+      </div>
+      <div class="card"><h3>Update checks</h3>
+        <form class="form-actions" id="checkForm"><label class="f" style="grid-auto-flow:column;align-items:center">Check Maven every
+          <input name="minutes" type="number" min="0" max="10080" value="${cfg.check_minutes}" style="width:90px"></label> minutes
+          <button class="btn" type="submit">Save</button></form>
+        <p class="help" style="margin-top:8px">0 turns scheduled checks off (the Check button still works). Each app's mode decides what happens:
+          <b>Auto</b> deploys, <b>Notify</b> shows “update available”, <b>Off</b> skips the app.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Pipeline examples</h3>
+      <p class="help">Deploy a version published to Artifactory, with properties and secure properties (one call; the app restarts with them):</p>
+      <pre class="code">curl -fsS -X PUT ${esc(base)}/api/apps/orders-api \\
+  -H "Authorization: Bearer $RM_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"pool": "default", "group": "com.acqua", "artifact": "orders-api", "version": "1.4.2",
+       "updates": "notify", "route": {"path": "/api/orders", "port": 8091},
+       "properties": {"mule_env": "prod", "db.host": "mysql"},
+       "secureProperties": {"db.password": "'"$DB_PASSWORD"'", "mule.key": "'"$MULE_KEY"'"}}'</pre>
+      <p class="help" style="margin-top:12px">Or upload the built jar (properties stay as they are, or set them first):</p>
+      <pre class="code">curl -fsS -X PUT "${esc(base)}/api/apps/orders-api?pool=default" \\
+  -H "Authorization: Bearer $RM_TOKEN" -H "Content-Type: application/java-archive" \\
+  --data-binary @target/orders-api-1.4.2-mule-application.jar
+
+curl -fsS -X PUT ${esc(base)}/api/apps/orders-api/properties \\
+  -H "Authorization: Bearer $RM_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"properties": {"mule_env": "prod"}, "secureProperties": {"db.password": null}}'   # null = keep the stored value</pre>
+      <p class="help" style="margin-top:12px">Other endpoints: <code>GET /api/apps</code>, <code>POST /api/apps/&lt;app&gt;/restart</code>, <code>POST /api/apps/&lt;app&gt;/check</code>,
+        <code>DELETE /api/apps/&lt;app&gt;</code>, <code>GET|PUT|DELETE /api/pools/&lt;pool&gt;</code>, <code>GET /api/runtime/versions</code>.</p>
+    </div>`;
+  $('#tokenForm').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const t = await api('POST', 'api/tokens', { name: e.target.name.value.trim() });
+      dialog('Token created', `<p>Copy it now: it will not be shown again.</p><div class="token-box" id="tok">${esc(t.token)}</div>
+        <div class="form-actions" style="margin-top:12px"><button class="btn primary" type="button" id="copyTok">Copy</button></div>`,
+        el => $('#copyTok', el).onclick = async () => { try { await navigator.clipboard.writeText(t.token); toast('Copied', '', 'good'); } catch { toast('Copy failed', 'select the text and copy it', 'bad'); } });
+      renderAccess();
+    } catch (err) { toast('Token not created', err.message, 'bad'); }
+  };
+  $('#checkForm').onsubmit = async e => {
+    e.preventDefault();
+    try { const s = await api('PUT', 'api/settings', { check_minutes: +e.target.minutes.value });
+      toast('Saved', s.check_minutes ? `Maven is checked every ${s.check_minutes} minutes.` : 'Scheduled update checks are off.', 'good'); }
+    catch (err) { toast('Not saved', err.message, 'bad'); }
+  };
+  $('#view-access').onclick = async e => {
+    const r = e.target.closest('[data-revoke]');
+    if (!r || !confirm('Revoke this token? Pipelines using it stop working.')) return;
+    try { await api('DELETE', `api/tokens/${r.dataset.revoke}`); toast('Token revoked', '', 'good'); } catch (err) { toast('Revoke failed', err.message, 'bad'); }
+    renderAccess();
+  };
+}
+
+// ---------- boot ----------
+async function refresh() {
+  state = await api('GET', 'api/apps');
+  if (sel && !current()) sel = null;
+  renderList();
+  // header only: keeps unsaved settings/properties, the log view and chart hover state intact
+  if (view === 'apps') renderMain(!!$('#head') && !!current());
+  if (view === 'pools') loadPools();
+}
+
+async function boot() {
+  me = await api('GET', 'api/me');
+  const initials = (me.name || me.user || '?').split(/[\s._-]+/).map(s => s[0]).join('').slice(0, 2).toUpperCase();
+  $('#user').innerHTML = `<span class="avatar" aria-hidden="true">${esc(initials)}</span>
+    <span>${esc(me.name || me.user)}<br><span style="color:var(--muted)">${me.auth === 'keycloak' ? 'Keycloak' : me.auth === 'token' ? 'API token' : 'API key login'}</span></span>
+    ${me.logout ? '<a class="btn small" href="logout">Sign out</a>' : ''}`;
+  await Promise.all([refresh(), loadPools(false)]);
+  route();
+  setInterval(() => refresh().catch(() => {}), 5000);
+  setInterval(() => { if (view === 'apps' && sel && tab === 'overview' && !document.hidden) loadOverview(); }, 30000);
+}
+boot().catch(err => { $('#main').innerHTML = `<div class="welcome">${esc(err.message)}</div>`; show('apps'); });
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 # Prometheus Alert Rules for OpenSearch Stack
-# This file defines alert conditions for monitoring the OpenSearch, Logstash, OpenSearch Dashboards, Jaeger stack
+# This file defines alert conditions for monitoring the OpenSearch, Fluent Bit, OpenSearch Dashboards, Jaeger stack
 #
 # Alert severity levels:
 # - critical: Immediate action required, service outage or data loss
@@ -192,48 +192,10 @@ groups:
           summary: "APISIX 5xx error rate high"
           description: "Error rate is {{ $value | humanizePercentage }} for route {{ $labels.route }}"
 
-  # Logstash Alerts
-  - name: logstash_pipeline
-    interval: 60s
-    rules:
-      - alert: LogstashDown
-        expr: up{job="logstash"} == 0
-        for: 5m
-        labels:
-          severity: critical
-          service: logstash
-          component: pipeline
-        annotations:
-          summary: "Logstash is down"
-          description: "Logstash has been down for more than 5 minutes. Log ingestion is stopped."
+  # OpenSearch Dashboards exposes no Prometheus metrics (no scrape job): its
+  # container healthcheck covers it.
 
-      - alert: LogstashPipelineFailures
-        expr: rate(logstash_pipeline_events_out{pipeline="main"}[5m]) == 0 and rate(logstash_pipeline_events_in{pipeline="main"}[5m]) > 0
-        for: 10m
-        labels:
-          severity: critical
-          service: logstash
-          component: pipeline
-        annotations:
-          summary: "Logstash pipeline not processing events"
-          description: "Logstash is receiving events but not outputting any. Check pipeline configuration."
-
-  # OpenSearch Dashboards Alerts (replaces OpenSearch Dashboards)
-  - name: opensearch_dashboards_service
-    interval: 60s
-    rules:
-      - alert: OpenSearchDashboardsDown
-        expr: up{job="opensearch-dashboards"} == 0
-        for: 5m
-        labels:
-          severity: warning
-          service: opensearch-dashboards
-          component: ui
-        annotations:
-          summary: "OpenSearch Dashboards is down"
-          description: "OpenSearch Dashboards has been down for more than 5 minutes. Dashboard access is unavailable."
-
-  # Jaeger Alerts (replaces APM Server)
+  # Jaeger v2 (OpenTelemetry Collector based; metrics on jaeger:8888)
   - name: jaeger_tracing
     interval: 60s
     rules:
@@ -247,21 +209,21 @@ groups:
         annotations:
           summary: "Jaeger is down"
           description: "Jaeger has been down for more than 5 minutes. Distributed tracing is unavailable."
-          jaeger_url: "http://localhost:16686/jaeger/"
+          jaeger_url: "https://localhost:9443/jaeger/"
 
-      - alert: JaegerCollectorHighLatency
-        expr: histogram_quantile(0.95, rate(jaeger_collector_save_latency_bucket[5m])) > 1000
+      - alert: JaegerStorageHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(jaeger_storage_bulk_index_latency_ok_bucket[5m]))) > 1000   # ms
         for: 5m
         labels:
           severity: warning
           service: jaeger
-          component: collector
+          component: storage
         annotations:
-          summary: "Jaeger collector latency high"
-          description: "95th percentile collector save latency is {{ $value }}ms"
+          summary: "Jaeger writes to OpenSearch are slow"
+          description: "95th percentile bulk index latency is {{ $value }}ms"
 
       - alert: JaegerSpanDropped
-        expr: rate(jaeger_collector_spans_dropped_total[5m]) > 0
+        expr: sum(rate(otelcol_receiver_refused_spans[5m])) + sum(rate(otelcol_receiver_failed_spans[5m])) + sum(rate(jaeger_storage_bulk_index_errors[5m])) > 0
         for: 5m
         labels:
           severity: warning
@@ -269,7 +231,7 @@ groups:
           component: collector
         annotations:
           summary: "Jaeger is dropping spans"
-          description: "Jaeger collector is dropping {{ $value }} spans per second"
+          description: "{{ $value }} spans/s refused or failed at intake, or bulk index errors writing to OpenSearch"
 
   # Prometheus & Grafana Alerts
   - name: monitoring_stack

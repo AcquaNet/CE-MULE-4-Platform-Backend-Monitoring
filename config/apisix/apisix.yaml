@@ -1,65 +1,136 @@
-ssls:
-  - sni: "localhost"
-    cert: |
-      -----BEGIN CERTIFICATE-----
-      MIIE+zCCAuOgAwIBAgIUUKFKa8a8AuB2ueJytIsDlGwZ2yowDQYJKoZIhvcNAQEL
-      BQAwZzELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
-      MRUwEwYDVQQKDAxPcmdhbml6YXRpb24xCzAJBgNVBAsMAklUMRUwEwYDVQQDDAxF
-      TEstU3RhY2stQ0EwHhcNMjUxMjI5MTc0NzU2WhcNMzUxMjI3MTc0NzU2WjBhMQsw
-      CQYDVQQGEwJVUzEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxFTATBgNV
-      BAoMDE9yZ2FuaXphdGlvbjELMAkGA1UECwwCSVQxDzANBgNVBAMMBmFwaXNpeDCC
-      ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMy1VRqp8EhzOYCv7Pd4QGf8
-      JKesyVYaJ7EKothaVsrB26taeZ+pIZkVSaTMQ8spIByUqtcZrTLmQ3SaPrIPMCoF
-      TyvywlCnjZqloNS/evvKWXOWmfWGBPuk6X1ZEddTE3/2ar6c2Jk3eQ+0H4uyjbCU
-      lThQQ319WCQmlI+kV1w+WkYEcmFeM/pLQav2WMZ0ZJmjZDAYjeLgfc6d8WC1gbfP
-      g2EmR1jGlp+QOqJdxKHm+dxBsAUmvZ6ktm5B+F+rLLDpnOBZ1igJCEkbHDTbKPZR
-      M3L0O2cGZKKAMeSgmxXKV7l7+CzBcqsj6mqAznMU/Zg3vX8F6EndPC0sBUGRRNcC
-      AwEAAaOBpDCBoTALBgNVHQ8EBAMCBDAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsG
-      AQUFBwMCMDMGA1UdEQQsMCqCBmFwaXNpeIIJbG9jYWxob3N0gglsb2NhbGhvc3SH
-      BH8AAAGHBKwqABQwHQYDVR0OBBYEFNqveAse2dDveQBv3lZ8FmYMkWgmMB8GA1Ud
-      IwQYMBaAFPygvD/qRm7D5XOzJfVTQeVKUkztMA0GCSqGSIb3DQEBCwUAA4ICAQBn
-      6UDSW4JyCgmlSPomleY8igpbDAmWdFDmeJhaD9e6pXD733i+hwWi16NUpExKCRAk
-      zFrt3TsSk9+KqeWg7Xslq3KN6KQgppurYjty+3AriiIIh3Q3kwlj2DQZMkZWUEpC
-      rkAYuF05piP+HInoOfP3alHfIhobwRccu9M6e9VTpvO68/vvlgwfOcv0mS1et6/T
-      Z+tOngYNp+4v0/UWoNPRxHcyXyVJhg90zZiLTr/VL/Q8xOayKWYvz/gQNS5alerT
-      956R1ZWJQOXBeoteLeXKHmXb98SDA1aVOXkZyyvVPNGVNV0m9/dCpjrnP3P+WKMx
-      1oizCaTM4kCeZbpMrdX/B3aHi9BD80GNe8kj+cF0t/9ljxsGzGmKuRaiP9bbzTFF
-      6e//GNuzVnHXoqaUpfeXpzLsgbH7xht0VoctuuxD2emvmaKewwo3yumks3MhkPPH
-      suS2mtExtxg7Ou7EVL+7KSUrj6iBiMNTWpAvguzt7xTJ7ir8A5aC+u5GHf/ucOWp
-      mRTMj0QO2wFqTe/ZwoVwj0xC19sUw9q0GYRyEDSzHCVtiQNFbll+fh3mtGIWHXKn
-      lEAQKZzvhxwMTo/yFeLS3tmvfXloZGBVSOFoXvwwDHvGI9+b5G1nwSQ2z5IeLiYZ
-      vUGy6Gb91Rvp79EI6uEFgkE9mAxqxxPlbAyAh6EYMg==
-      -----END CERTIFICATE-----
-    key: |
-      -----BEGIN PRIVATE KEY-----
-      MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDMtVUaqfBIczmA
-      r+z3eEBn/CSnrMlWGiexCqLYWlbKwdurWnmfqSGZFUmkzEPLKSAclKrXGa0y5kN0
-      mj6yDzAqBU8r8sJQp42apaDUv3r7yllzlpn1hgT7pOl9WRHXUxN/9mq+nNiZN3kP
-      tB+Lso2wlJU4UEN9fVgkJpSPpFdcPlpGBHJhXjP6S0Gr9ljGdGSZo2QwGI3i4H3O
-      nfFgtYG3z4NhJkdYxpafkDqiXcSh5vncQbAFJr2epLZuQfhfqyyw6ZzgWdYoCQhJ
-      Gxw02yj2UTNy9DtnBmSigDHkoJsVyle5e/gswXKrI+pqgM5zFP2YN71/BehJ3Twt
-      LAVBkUTXAgMBAAECggEAJAjtnL56cj56SlltpNhxufxMNYn4fSQohYVCSkSIz7NV
-      aHIKQ91BcVGqf4yHiI1KPk27TxcRgoq/KBj43V5IE7WQjMN0ij8ccbMjPyAf1Y/2
-      tB64Jly7ptKOWYbi2Z0hqx5lBv3UMRBvSqDiBrTdNU7Kf7m9T6tPZzm1YB3FVRLC
-      CWOCCTaYG+yWwWOLyPw0z/1JTfQJYSI/48XxKDjWAfWCfUbdaFhmyoEF0z54y3eE
-      pwshf0wmxpwal8Ib0HvWQGx3EAeGM4OGXFfE8WbdHuI+pgeT8EWNZf1FLZZNJ3YH
-      2KwVPvwfS35T5w1g0AjSWzqX6KAL36I1vZIEjiuzVQKBgQD0z/zWvEWbusDGH5bX
-      ExNAb0Qj6KeMnnf0M+6N3nU05Wxmzycjw3AVfkABitHzk5l0ktkxl8sktz5j112B
-      XtdNBsUyeJ4iqyc2odV6SErbSWyALpJ3nSLiSoURyjMpxhey/zg2a6cTV3A081RQ
-      iEIJzpUuJWec/38WG5mGLRj7hQKBgQDWECyzc0loEoXzp5JlhKWGjbdrFEBpXrCn
-      6namOIBb2WvPt+xfdad5a8niyZWlaJxnru8qrpsBPNA41FJ7wtL98AxlEYsqX0wX
-      fVnz3pw1RX//1EJ6G84O7iaoydURDfGGO8IwTjndkNhTTDT15E7jaPPOpLkOSPTy
-      ViVk8lAnqwKBgQCkeDr4FQJ6ziuGr2BKXAFaD6ZqrXorCaezA1SoMSTzBZMfOtqj
-      t0BM4EWmA5prluTIoYOTQtRydT1QHDcwnAPvNrYy4z/yMKQmmvDttzW7PwfK0f8K
-      pyHxf3kI65wV24S+d6JPRWG4p8y1dihV9kTPi99DYlPK8QdzVdV9hDy9dQKBgQDP
-      7dgt219DezKoUW5vs+BBCelPVtWWRIceJC5qGVn9Xf1OQJ6WvycVV3E8HImCqVG7
-      mP3yHLauBg9QFFWmp8DhL0oq5laiqvyzmGxG6UYcrMy/iMOl7tpCQGxG6f5P2ZZw
-      yB1BZMrqgGbQyqZq7wD9/pVMdU7YJF/iAXHDU2gujwKBgQDJSyAQiG80DqAAYTqF
-      4iHLrZbm6SJXmgEbaEXd32z9+/75GG1gEktg0c+L1Ogcu5D8r7jr4mlRHtSoEIpC
-      brXrURcuU969ovT6e4WtXGPHrWaz2bGOH+fbbF3z+VVcIlpbWkpg6i620XFAYHRQ
-      yc0EBt5E5QVTNYJWaDlZelSGYQ==
-      -----END PRIVATE KEY-----
+# APISIX standalone configuration - the ONLY place gateway routes are defined.
+#
+# APISIX runs in standalone mode (no etcd, no Admin API, no dashboard). Edit this file
+# and save: config/apisix/start.sh re-renders it inside the container within ~2s and
+# APISIX hot-reloads it. TLS certs are NOT stored here; they are injected from
+# certs/apisix/apisix.{crt,key} at render time.
+#
 routes:
+  #
+  # Home page https://localhost:9443/ : links to every tool, one Keycloak sign-in for all of them (gateway session
+  # cookie here; Runtime Manager, Grafana and Dashboards sign in with Keycloak themselves and ride the same Keycloak
+  # session). /sso/callback is the sign-in return path, /logout ends the gateway and Keycloak sessions.
+  # The page is the mocking plugin's response (no upstream). Each card probes its tool and stays unclickable until it
+  # answers: 403 = not for this user (hidden), 5xx/404/no answer in 5 s = not running or profile off (greyed, no link).
+  # Tools that sign users in themselves (data-admin) can't answer 403 to the probe: /sso/is-admin decides for them.
+  #
+  - uris: ["/", "/sso/callback"]
+    name: home
+    plugin_config_id: "sso"
+    plugins:
+      mocking:
+        content_type: "text/html; charset=utf-8"
+        with_mock_header: false
+        response_example: |
+          <!doctype html>
+          <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Mule Platform</title>
+          <style>
+          :root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#667085;--line:#e3e6eb;--accent:#2563eb}
+          @media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--fg:#e6e9ef;--muted:#98a2b3;--line:#2a313d;--accent:#6ea0ff}}
+          body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+          header{display:flex;justify-content:space-between;align-items:center;max-width:960px;margin:0 auto;padding:24px 16px}
+          h1{font-size:20px;margin:0}a{color:var(--accent);text-decoration:none}
+          main{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;max-width:960px;margin:0 auto;padding:0 16px 32px}
+          .card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;color:var(--fg)}
+          .card:hover{border-color:var(--accent)}.card b{display:block;margin-bottom:4px}.card span{color:var(--muted);font-size:13px}
+          .wait{opacity:.6;pointer-events:none}
+          .off{opacity:.45;cursor:not-allowed}.off:hover{border-color:var(--line)}.off span:after{content:" (not running or not enabled)"}
+          </style></head><body>
+          <header><h1>Mule Platform</h1><a href="/logout">Sign out</a></header>
+          <main>
+          <a class="card" data-admin href="/runtime-manager/"><b>Runtime Manager</b><span>Apps, runtime pools, deployments</span></a>
+          <a class="card" href="/dashboards/"><b>Logs</b><span>OpenSearch Dashboards</span></a>
+          <a class="card" data-admin href="/grafana/"><b>Metrics dashboards</b><span>Grafana</span></a>
+          <a class="card" href="/jaeger/"><b>Traces</b><span>Jaeger</span></a>
+          <a class="card" href="/prometheus/"><b>Metrics and alerts</b><span>Prometheus</span></a>
+          <a class="card" href="/alertmanager/"><b>Alert notifications</b><span>Alertmanager</span></a>
+          <a class="card" href="/activemq/admin/"><b>Message broker</b><span>ActiveMQ console</span></a>
+          <a class="card" data-admin href="/runtime-manager/api/docs"><b>API docs</b><span>Runtime Manager API</span></a>
+          <a class="card" data-admin href="/auth/admin/mule/console/"><b>Users and tenants</b><span>Keycloak admin console</span></a>
+          <a class="card" href="/auth/realms/mule/account/"><b>My account</b><span>Password, sessions</span></a>
+          </main>
+          <script>
+          // each card is unusable until its probe answers: 403 = not for this user (removed); 5xx/404 or no answer =
+          // not running or its profile is off (greyed, link removed); anything else (200, a sign-in redirect) = usable
+          // admin-only tools that sign users in themselves: removed when /sso/is-admin says 403 (no realm role admin)
+          fetch('/sso/is-admin', {redirect: 'manual', credentials: 'same-origin'}).then(function (r) {
+            if (r.status === 403) document.querySelectorAll('.card[data-admin]').forEach(function (a) { a.remove(); });
+          }).catch(function () {});
+          document.querySelectorAll('.card').forEach(function (a) {
+            var off = function () { a.classList.add('off'); a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); };
+            a.classList.add('wait');
+            // a container that just went away can hold the gateway until its connect timeout: give up after 5 s
+            var ctl = new AbortController(); setTimeout(function () { ctl.abort(); }, 5000);
+            fetch(a.getAttribute('href'), {redirect: 'manual', credentials: 'same-origin', signal: ctl.signal}).then(function (r) {
+              if (r.status === 403) a.remove(); else if (r.status >= 500 || r.status === 404) off();
+            }).catch(off).then(function () { a.classList.remove('wait'); });
+          });
+          </script>
+          </body></html>
+
+  # /logout ends the gateway and Keycloak sessions (openid-connect) and Dashboards' own session cookies
+  - uri: /logout
+    name: logout
+    plugin_config_id: "sso"
+    plugins:
+      response-rewrite:   # replaces the plugin_config's: same framing headers, plus the Dashboards cookies
+        headers:
+          set:
+            X-Frame-Options: "DENY"
+            Content-Security-Policy: "frame-ancestors 'none'"
+          add:
+            - "Set-Cookie: security_authentication=; Path=/dashboards; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+            - "Set-Cookie: security_authentication_oidc1=; Path=/dashboards; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+
+  # home page probe: 403 without the realm role admin (sso-admin), else Keycloak's public realm info
+  - uri: /sso/is-admin
+    name: sso-is-admin
+    methods: [GET]
+    plugin_config_id: "sso-admin"
+    upstream:
+      nodes:
+        "keycloak:8080": 1
+      type: roundrobin
+    plugins:
+      proxy-rewrite:
+        uri: /auth/realms/mule
+
+  # BEGIN runtime-manager (generated, do not edit)
+  # rm-route {"app": "orders-api", "path": "/edge", "port": 8081}
+  # END runtime-manager
+  #
+  # Runtime Manager UI/API: https://localhost:9443/runtime-manager/ (no published port of its own).
+  # No gateway auth here: it signs users in itself (Keycloak, API tokens, Basic).
+  #
+  - uri: /runtime-manager
+    name: runtime-manager-root
+    desc: "Runtime Manager: add the trailing slash its relative URLs need"
+    plugins:
+      redirect:
+        uri: /runtime-manager/
+
+  - uri: /runtime-manager/*
+    name: runtime-manager
+    desc: "Runtime Manager UI and REST API (prefix stripped)"
+    upstream:
+      type: roundrobin
+      scheme: http
+      nodes:
+        "ce-base-runtime-manager:8080": 1
+      timeout:
+        connect: 10
+        send: 600
+        read: 600
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/runtime-manager/(.*)"
+          - "/$1"
+      # app jars are bigger than the gateway-wide 50m limit
+      client-control:
+        max_body_size: 536870912
+
   #
   # OpenSearch Dashboards Routes - Web UI Access (replaces OpenSearch Dashboards)
   #
@@ -87,10 +158,6 @@ routes:
     plugins:
       proxy-rewrite:
         uri: /dashboards/
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
   - uri: /dashboards/*
     name: dashboards-proxy
@@ -113,11 +180,6 @@ routes:
         connect: 60
         send: 60
         read: 60
-    plugins:
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
   #
   # OpenSearch Routes - Search and Analytics API (replaces OpenSearch)
@@ -133,6 +195,11 @@ routes:
       - HEAD
     upstream_id: "3"
     plugins:
+      # only on 9080 (published on 127.0.0.1): no password guessing against the OpenSearch admin from outside
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function() if ngx.var.server_port ~= '9080' then return 404 end end"
       proxy-rewrite:
         uri: /
 
@@ -147,37 +214,39 @@ routes:
       - HEAD
     upstream_id: "3"
     plugins:
+      # only on 9080 (published on 127.0.0.1): no password guessing against the OpenSearch admin from outside
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function() if ngx.var.server_port ~= '9080' then return 404 end end"
       proxy-rewrite:
         regex_uri:
           - "^/opensearch(.*)"
           - "$1"
 
   #
-  # Logstash Routes - HTTP Monitoring API
-  # Note: TCP/UDP log ingestion routed via stream_routes (see below)
+  # OTLP trace intake (CloudHub / external apps): POST https://<gateway>:9443/otlp/v1/traces with header
+  # x-otlp-token: <OTLP_INGEST_TOKEN>. Inside the network workers send to jaeger:4317 directly; Jaeger's
+  # ports are not published.
   #
-  - uri: /logstash
-    name: logstash-root
-    desc: "Logstash monitoring API root"
+  - uri: /otlp/*
+    name: otlp-ingest
+    desc: "OpenTelemetry traces (OTLP/HTTP) to Jaeger, token-checked"
     methods:
-      - GET
-    upstream_id: "2"  # References logstash-monitoring upstream
-    plugins:
-      proxy-rewrite:
-        uri: /
-
-  - uri: /logstash/*
-    name: logstash-api
-    desc: "Logstash monitoring and management API"
-    methods:
-      - GET
       - POST
-    upstream_id: "2"  # References logstash-monitoring upstream
+    upstream:
+      type: roundrobin
+      scheme: http
+      nodes:
+        "jaeger:4318": 1
     plugins:
+      key-auth:
+        header: x-otlp-token
+        hide_credentials: true
       proxy-rewrite:
         regex_uri:
-          - "^/logstash(.*)"
-          - "$1"
+          - "^/otlp/(.*)"
+          - "/$1"
 
   #
   # Jaeger Routes - Distributed Tracing UI (replaces APM Server)
@@ -198,13 +267,10 @@ routes:
         connect: 60
         send: 60
         read: 60
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
     plugins:
       proxy-rewrite:
         uri: /jaeger/
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
   - uri: /jaeger/*
     name: jaeger-proxy
@@ -222,11 +288,7 @@ routes:
         connect: 60
         send: 60
         read: 60
-    plugins:
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
 
   #
   # Mule Platform Routes - Load Balanced Across Workers
@@ -248,7 +310,7 @@ routes:
       # OpenID Connect authentication via Keycloak
       openid-connect:
         client_id: "mule-api-gateway"
-        client_secret: "mule-gateway-secret-12345"
+        client_secret: "${MULE_GATEWAY_CLIENT_SECRET}"
         discovery: "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"
         scope: "openid profile email"
         bearer_only: true
@@ -260,6 +322,15 @@ routes:
         set_id_token_header: false
         set_userinfo_header: false
       # Rate limiting: 100 requests per minute per IP
+      # Runs after openid-connect, on its verified token: only tokens issued to mule-api-gateway (azp) with its
+      # api-access client role pass (any other realm token, e.g. from the dashboards client, gets 403), and
+      # X-Tenant-ID (which tenant's logs/traces a request lands in) comes from the token's tenant_id claim, never
+      # from the caller's header; X-ID-Token/X-Userinfo/X-Access-Token sent by a client are dropped (the app could take
+      # them for gateway-verified identity). start.sh drops this together with openid-connect when GATEWAY_AUTH=off.
+      serverless-post-function:
+        phase: access
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
       limit-count:
         count: 100
         time_window: 60
@@ -279,7 +350,6 @@ routes:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
         allow_headers: "*"
-        allow_credentials: true
       prometheus:
         prefer_name: true
 
@@ -299,7 +369,7 @@ routes:
       # OpenID Connect authentication via Keycloak
       openid-connect:
         client_id: "mule-api-gateway"
-        client_secret: "mule-gateway-secret-12345"
+        client_secret: "${MULE_GATEWAY_CLIENT_SECRET}"
         discovery: "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"
         scope: "openid profile email"
         bearer_only: true
@@ -311,6 +381,15 @@ routes:
         set_id_token_header: false
         set_userinfo_header: false
       # Rate limiting: 100 requests per minute per IP
+      # Runs after openid-connect, on its verified token: only tokens issued to mule-api-gateway (azp) with its
+      # api-access client role pass (any other realm token, e.g. from the dashboards client, gets 403), and
+      # X-Tenant-ID (which tenant's logs/traces a request lands in) comes from the token's tenant_id claim, never
+      # from the caller's header; X-ID-Token/X-Userinfo/X-Access-Token sent by a client are dropped (the app could take
+      # them for gateway-verified identity). start.sh drops this together with openid-connect when GATEWAY_AUTH=off.
+      serverless-post-function:
+        phase: access
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
       limit-count:
         count: 100
         time_window: 60
@@ -330,7 +409,6 @@ routes:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
         allow_headers: "*"
-        allow_credentials: true
       prometheus:
         prefer_name: true
 
@@ -342,14 +420,11 @@ routes:
     desc: "ActiveMQ web console root redirect"
     methods:
       - GET
-      - POST
-    upstream:
-      nodes:
-        "ce-base-apachemq-backend:8161": 1
-      type: roundrobin
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
     plugins:
-      proxy-rewrite:
-        uri: /
+      redirect:   # ActiveMQ's own answer for / is an absolute http:// redirect without the /activemq prefix
+        uri: /activemq/admin/
+        ret_code: 302
 
   - uri: /activemq/*
     name: activemq-console
@@ -363,11 +438,20 @@ routes:
       nodes:
         "ce-base-apachemq-backend:8161": 1
       type: roundrobin
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
     plugins:
+      # /api/jolokia (JMX over HTTP: CVE-2026-34197 and its variants run code through it) and the message REST API
+      # are not needed by the web console (/admin)
+      uri-blocker:
+        block_rules: ["^/activemq/api(/|$)"]
+        rejected_code: 403
       proxy-rewrite:
         regex_uri:
           - "^/activemq(.*)"
           - "$1"
+        headers:
+          set:
+            Authorization: "Basic ${ACTIVEMQ_BASIC_AUTH}"   # console user admin (ACTIVEMQ_ADMIN_PASSWORD)
 
   #
   # Prometheus Routes - Metrics and Monitoring
@@ -391,6 +475,7 @@ routes:
         connect: 60
         send: 60
         read: 60
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
     plugins:
       proxy-rewrite:
         uri: /
@@ -414,11 +499,26 @@ routes:
         connect: 60
         send: 60
         read: 60
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
     plugins:
       proxy-rewrite:
         regex_uri:
           - "^/prometheus(.*)"
           - "$1"
+
+  #
+  # Alertmanager (alerting profile): served under /alertmanager by itself (--web.external-url), no rewrite
+  #
+  - uris: ["/alertmanager", "/alertmanager/*"]
+    name: alertmanager
+    desc: "Alertmanager UI and API"
+    upstream:
+      scheme: http
+      pass_host: pass
+      nodes:
+        "alertmanager:9093": 1
+      type: roundrobin
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
 
   #
   # Grafana Routes - Dashboards and Visualization
@@ -447,10 +547,6 @@ routes:
     plugins:
       proxy-rewrite:
         uri: /grafana/
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
   - uri: /grafana/*
     name: grafana-proxy
@@ -473,11 +569,6 @@ routes:
         connect: 60
         send: 60
         read: 60
-    plugins:
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
   #
   # Keycloak Routes - Identity and Access Management
@@ -505,6 +596,12 @@ routes:
         send: 60
         read: 60
     plugins:
+      # master realm (Keycloak server admin) only on 9080 (127.0.0.1 on the host): realm mule's admin has
+      # realm-admin for day-to-day work, scripts (manage-tenants.sh) use http://localhost:9080
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function() if ngx.var.server_port ~= '9080' and ('/' .. ngx.var.uri:lower() .. '/'):find('/master/', 1, true) then return 404 end end"
       proxy-rewrite:
         uri: /auth/
         headers:
@@ -513,11 +610,6 @@ routes:
             X-Forwarded-Proto: "https"
             X-Forwarded-Port: "9443"
             X-Forwarded-For: "$remote_addr"
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
-        allow_credentials: true
 
   - uri: /auth/*
     name: keycloak-proxy
@@ -541,6 +633,12 @@ routes:
         send: 60
         read: 60
     plugins:
+      # master realm (Keycloak server admin) only on 9080 (127.0.0.1 on the host): realm mule's admin has
+      # realm-admin for day-to-day work, scripts (manage-tenants.sh) use http://localhost:9080
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function() if ngx.var.server_port ~= '9080' and ('/' .. ngx.var.uri:lower() .. '/'):find('/master/', 1, true) then return 404 end end"
       proxy-rewrite:
         headers:
           set:
@@ -548,74 +646,137 @@ routes:
             X-Forwarded-Proto: "https"
             X-Forwarded-Port: "9443"
             X-Forwarded-For: "$remote_addr"
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
-        allow_credentials: true
 
-  #
-  # APISIX Dashboard Routes - Management UI
-  #
-  - uri: /dashboard
-    name: apisix-dashboard-root
-    desc: "APISIX Dashboard root redirect"
-    methods:
-      - GET
-      - POST
-      - PUT
-      - DELETE
-      - PATCH
-      - HEAD
-      - OPTIONS
-    upstream:
-      scheme: http
-      pass_host: pass
-      nodes:
-        "apisix-dashboard:9000": 1
-      type: roundrobin
-      timeout:
-        connect: 60
-        send: 60
-        read: 60
-    plugins:
-      proxy-rewrite:
-        uri: /
-      cors:
-        allow_origins: "*"
-        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
-        allow_headers: "*"
 
-  - uri: /dashboard/*
-    name: apisix-dashboard-proxy
-    desc: "APISIX Dashboard UI and API proxy"
-    methods:
-      - GET
-      - POST
-      - PUT
-      - DELETE
-      - PATCH
-      - HEAD
-      - OPTIONS
-    upstream:
-      scheme: http
-      pass_host: pass
-      nodes:
-        "apisix-dashboard:9000": 1
-      type: roundrobin
-      timeout:
-        connect: 60
-        send: 60
-        read: 60
+#
+# Shared plugins for per-app routes generated by the Runtime Manager
+# (same auth + rate limit as /api/*). Generated routes live in the
+# "BEGIN runtime-manager" block at the top of routes: - don't edit that block by hand.
+#
+plugin_configs:
+  # Gateway single sign-on (Keycloak client gateway-sso, one session cookie): "sso" = any signed-in user (home page),
+  # "sso-admin" = realm role admin (/jaeger, /prometheus, /activemq). With GATEWAY_AUTH=off start.sh strips
+  # openid-connect + the role check and points the sso-admin routes at "ops-basic" instead.
+  - id: "sso"
     plugins:
-      proxy-rewrite:
-        regex_uri:
-          - "^/dashboard(.*)"
-          - "$1"
+      # clears identity headers a client could send itself: openid-connect does not set X-ID-Token for bearer
+      # requests, so a forged one would otherwise reach the role check; a cross-site /logout (another page signing
+      # the user out) is refused
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); ctx.sso_auth = core.request.header(ctx, 'Authorization'); for _, h in ipairs({'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; if ngx.var.uri == '/logout' and core.request.header(ctx, 'Sec-Fetch-Site') == 'cross-site' then return 403 end end"
+      response-rewrite:           # no framing (clickjacking)
+        headers:
+          set:
+            X-Frame-Options: "DENY"
+            Content-Security-Policy: "frame-ancestors 'none'"
+      openid-connect:
+        client_id: "gateway-sso"
+        client_secret: "${GATEWAY_SSO_CLIENT_SECRET}"
+        discovery: "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"
+        scope: "openid profile email"
+        bearer_only: false          # browser sign-in; a valid bearer token (scripts) is accepted as well
+        use_jwks: true              # bearer tokens are verified locally with the realm keys...
+        # ...but 3.7 only looks at bearer tokens in browser mode when an introspection endpoint is set (not called)
+        introspection_endpoint: "http://keycloak:8080/auth/realms/mule/protocol/openid-connect/token/introspect"
+        realm: "mule"
+        redirect_uri: "/sso/callback"   # relative: same host the browser used
+        logout_path: "/logout"
+        post_logout_redirect_uri: "https://localhost:9443/"
+        session:
+          secret: "${GATEWAY_SESSION_SECRET}"
+        # the session lives in a cookie sent with every request: keep only the ID token (role check, logout hint);
+        # with all tokens it grows past nginx's header limit next to Keycloak's cookies (400 "Cookie Too Large")
+        session_contents:
+          id_token: true
+          enc_id_token: true        # id_token_hint on logout, else Keycloak asks "Do you want to log out?"
+        set_access_token_header: false
+        set_userinfo_header: false
+        set_id_token_header: true   # X-ID-Token: the role check reads it (and removes it)
+  - id: "sso-admin"
+    plugins:
+      # clears identity headers a client could send itself: openid-connect does not set X-ID-Token for bearer
+      # requests, so a forged one would otherwise reach the role check; a cross-site /logout (another page signing
+      # the user out) is refused
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); ctx.sso_auth = core.request.header(ctx, 'Authorization'); for _, h in ipairs({'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; if ngx.var.uri == '/logout' and core.request.header(ctx, 'Sec-Fetch-Site') == 'cross-site' then return 403 end end"
+      response-rewrite:           # no framing (clickjacking)
+        headers:
+          set:
+            X-Frame-Options: "DENY"
+            Content-Security-Policy: "frame-ancestors 'none'"
+      openid-connect:
+        client_id: "gateway-sso"
+        client_secret: "${GATEWAY_SSO_CLIENT_SECRET}"
+        discovery: "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"
+        scope: "openid profile email"
+        bearer_only: false          # browser sign-in; a valid bearer token (scripts) is accepted as well
+        use_jwks: true              # bearer tokens are verified locally with the realm keys...
+        # ...but 3.7 only looks at bearer tokens in browser mode when an introspection endpoint is set (not called)
+        introspection_endpoint: "http://keycloak:8080/auth/realms/mule/protocol/openid-connect/token/introspect"
+        realm: "mule"
+        redirect_uri: "/sso/callback"   # relative: same host the browser used
+        logout_path: "/logout"
+        post_logout_redirect_uri: "https://localhost:9443/"
+        session:
+          secret: "${GATEWAY_SESSION_SECRET}"
+        # the session lives in a cookie sent with every request: keep only the ID token (role check, logout hint);
+        # with all tokens it grows past nginx's header limit next to Keycloak's cookies (400 "Cookie Too Large")
+        session_contents:
+          id_token: true
+          enc_id_token: true        # id_token_hint on logout, else Keycloak asks "Do you want to log out?"
+        set_access_token_header: false
+        set_userinfo_header: false
+        set_id_token_header: true   # X-ID-Token: the role check reads it (and removes it)
+      # realm role admin, from the ID token (browser session) or the verified bearer token (realm_access.roles);
+      # the token must be issued (azp) to gateway-sso or mule-api-gateway, not just any client of realm mule. The bearer
+      # header is the one the pre-function saved: a route's proxy-rewrite may replace Authorization (ActiveMQ's Basic)
+      serverless-post-function:
+        phase: access
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); local c; local raw = core.request.header(ctx, 'X-ID-Token'); if raw then c = core.json.decode(ngx.decode_base64(raw) or '') else local p = (ctx.sso_auth or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if p then p = p:gsub('-', '+'):gsub('_', '/'); c = core.json.decode(ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)) or '') end end; core.request.set_header(ctx, 'X-ID-Token', nil); if type(c) ~= 'table' or (c.azp ~= 'gateway-sso' and c.azp ~= 'mule-api-gateway') then return 403, {message = 'token not issued to gateway-sso or mule-api-gateway'} end; local roles = type(c) == 'table' and (c.roles or (type(c.realm_access) == 'table' and c.realm_access.roles)); if type(roles) == 'table' then for _, r in ipairs(roles) do if r == 'admin' then return end end end; return 403, {message = 'needs the Keycloak realm role admin'} end"
+  - id: "ops-basic"
+    plugins:
+      basic-auth: {}   # consumer ops (GATEWAY_OPS_PASSWORD)
+  - id: "mule-api-auth"
+    plugins:
+      openid-connect:
+        client_id: "mule-api-gateway"
+        client_secret: "${MULE_GATEWAY_CLIENT_SECRET}"
+        discovery: "http://keycloak:8080/auth/realms/mule/.well-known/openid-configuration"
+        scope: "openid profile email"
+        bearer_only: true
+        realm: "mule"
+        introspection_endpoint_auth_method: "client_secret_post"
+        use_jwks: true
+        set_access_token_header: false
+        set_id_token_header: false
+        set_userinfo_header: false
+      # Runs after openid-connect, on its verified token: only tokens issued to mule-api-gateway (azp) with its
+      # api-access client role pass (any other realm token, e.g. from the dashboards client, gets 403), and
+      # X-Tenant-ID (which tenant's logs/traces a request lands in) comes from the token's tenant_id claim, never
+      # from the caller's header; X-ID-Token/X-Userinfo/X-Access-Token sent by a client are dropped (the app could take
+      # them for gateway-verified identity). start.sh drops this together with openid-connect when GATEWAY_AUTH=off.
+      serverless-post-function:
+        phase: access
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
+      limit-count:
+        count: 100
+        time_window: 60
+        key_type: "var"
+        key: "remote_addr"
+        rejected_code: 429
+        rejected_msg: "Rate limit exceeded. Maximum 100 requests per minute."
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
         allow_headers: "*"
+      prometheus:
+        prefer_name: true
 
 upstreams:
   #
@@ -632,8 +793,13 @@ upstreams:
       read: 60
     retry_timeout: 0
     nodes:
-      "ce-base-mule-backend-1:8081": 100   # Worker 1
-      "ce-base-mule-backend-2:8081": 100   # Worker 2
+      # The workers the default app (MULEAPP_ARTIFACT_ID) runs on; the Runtime Manager rewrites this block
+      # (use "pool <name>" instead of "app <name>" to follow every worker of a pool)
+      # BEGIN runtime-manager app ce-mule-base (generated)
+      "mule-default-1:8081": 100
+      "mule-default-2:8081": 100
+      "rm-node-b:18000": 100
+      # END runtime-manager app ce-mule-base
     checks:
       active:
         type: http
@@ -678,39 +844,6 @@ upstreams:
           timeouts: 2
 
   #
-  # Logstash Monitoring Upstream - For HTTP API (Port 9600)
-  # Note: Supports multiple Logstash instances for future scaling
-  #
-  - id: "2"
-    name: logstash-monitoring
-    desc: "Logstash monitoring API with health checks"
-    type: roundrobin
-    scheme: http
-    timeout:
-      connect: 30
-      send: 30
-      read: 30
-    nodes:
-      "logstash:9600": 100   # Logstash instance 1
-    checks:
-      active:
-        type: http
-        http_path: /
-        healthy:
-          interval: 30
-          http_statuses:
-            - 200
-          successes: 2
-        unhealthy:
-          interval: 30
-          http_statuses:
-            - 500
-            - 502
-            - 503
-            - 504
-          http_failures: 3
-
-  #
   # OpenSearch Upstream - HTTPS with self-signed cert (no verification)
   #
   - id: "3"
@@ -719,6 +852,9 @@ upstreams:
     type: roundrobin
     scheme: https
     pass_host: pass
+    # OpenSearch's cert is per-install self-signed (scripts/opensearch-start.sh), not from certs/ca; internal network only
+    tls:
+      verify: false
     timeout:
       connect: 60
       send: 60
@@ -727,105 +863,34 @@ upstreams:
       "opensearch:9200": 1
 
 #
-# Stream Routes - TCP/UDP Proxying for Logstash Log Ingestion
-# ============================================================================
-# SSL Certificates - Default certificate for all hostnames
-# ============================================================================
-ssls:
-  - id: "1"
-    sni: "localhost"
-    cert: |
-      -----BEGIN CERTIFICATE-----
-      MIIE+zCCAuOgAwIBAgIUUKFKa8a8AuB2ueJytIsDlGwZ2yowDQYJKoZIhvcNAQEL
-      BQAwZzELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
-      MRUwEwYDVQQKDAxPcmdhbml6YXRpb24xCzAJBgNVBAsMAklUMRUwEwYDVQQDDAxF
-      TEstU3RhY2stQ0EwHhcNMjUxMjI5MTc0NzU2WhcNMzUxMjI3MTc0NzU2WjBhMQsw
-      CQYDVQQGEwJVUzEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxFTATBgNV
-      BAoMDE9yZ2FuaXphdGlvbjELMAkGA1UECwwCSVQxDzANBgNVBAMMBmFwaXNpeDCC
-      ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMy1VRqp8EhzOYCv7Pd4QGf8
-      JKesyVYaJ7EKothaVsrB26taeZ+pIZkVSaTMQ8spIByUqtcZrTLmQ3SaPrIPMCoF
-      TyvywlCnjZqloNS/evvKWXOWmfWGBPuk6X1ZEddTE3/2ar6c2Jk3eQ+0H4uyjbCU
-      lThQQ319WCQmlI+kV1w+WkYEcmFeM/pLQav2WMZ0ZJmjZDAYjeLgfc6d8WC1gbfP
-      g2EmR1jGlp+QOqJdxKHm+dxBsAUmvZ6ktm5B+F+rLLDpnOBZ1igJCEkbHDTbKPZR
-      M3L0O2cGZKKAMeSgmxXKV7l7+CzBcqsj6mqAznMU/Zg3vX8F6EndPC0sBUGRRNcC
-      AwEAAaOBpDCBoTALBgNVHQ8EBAMCBDAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsG
-      AQUFBwMCMDMGA1UdEQQsMCqCBmFwaXNpeIIJbG9jYWxob3N0gglsb2NhbGhvc3SH
-      BH8AAAGHBKwqABQwHQYDVR0OBBYEFNqveAse2dDveQBv3lZ8FmYMkWgmMB8GA1Ud
-      IwQYMBaAFPygvD/qRm7D5XOzJfVTQeVKUkztMA0GCSqGSIb3DQEBCwUAA4ICAQBn
-      6UDSW4JyCgmlSPomleY8igpbDAmWdFDmeJhaD9e6pXD733i+hwWi16NUpExKCRAk
-      zFrt3TsSk9+KqeWg7Xslq3KN6KQgppurYjty+3AriiIIh3Q3kwlj2DQZMkZWUEpC
-      rkAYuF05piP+HInoOfP3alHfIhobwRccu9M6e9VTpvO68/vvlgwfOcv0mS1et6/T
-      Z+tOngYNp+4v0/UWoNPRxHcyXyVJhg90zZiLTr/VL/Q8xOayKWYvz/gQNS5alerT
-      956R1ZWJQOXBeoteLeXKHmXb98SDA1aVOXkZyyvVPNGVNV0m9/dCpjrnP3P+WKMx
-      1oizCaTM4kCeZbpMrdX/B3aHi9BD80GNe8kj+cF0t/9ljxsGzGmKuRaiP9bbzTFF
-      6e//GNuzVnHXoqaUpfeXpzLsgbH7xht0VoctuuxD2emvmaKewwo3yumks3MhkPPH
-      suS2mtExtxg7Ou7EVL+7KSUrj6iBiMNTWpAvguzt7xTJ7ir8A5aC+u5GHf/ucOWp
-      mRTMj0QO2wFqTe/ZwoVwj0xC19sUw9q0GYRyEDSzHCVtiQNFbll+fh3mtGIWHXKn
-      lEAQKZzvhxwMTo/yFeLS3tmvfXloZGBVSOFoXvwwDHvGI9+b5G1nwSQ2z5IeLiYZ
-      vUGy6Gb91Rvp79EI6uEFgkE9mAxqxxPlbAyAh6EYMg==
-      -----END CERTIFICATE-----
-    key: |
-      -----BEGIN PRIVATE KEY-----
-      MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDMtVUaqfBIczmA
-      r+z3eEBn/CSnrMlWGiexCqLYWlbKwdurWnmfqSGZFUmkzEPLKSAclKrXGa0y5kN0
-      mj6yDzAqBU8r8sJQp42apaDUv3r7yllzlpn1hgT7pOl9WRHXUxN/9mq+nNiZN3kP
-      tB+Lso2wlJU4UEN9fVgkJpSPpFdcPlpGBHJhXjP6S0Gr9ljGdGSZo2QwGI3i4H3O
-      nfFgtYG3z4NhJkdYxpafkDqiXcSh5vncQbAFJr2epLZuQfhfqyyw6ZzgWdYoCQhJ
-      Gxw02yj2UTNy9DtnBmSigDHkoJsVyle5e/gswXKrI+pqgM5zFP2YN71/BehJ3Twt
-      LAVBkUTXAgMBAAECggEAJAjtnL56cj56SlltpNhxufxMNYn4fSQohYVCSkSIz7NV
-      aHIKQ91BcVGqf4yHiI1KPk27TxcRgoq/KBj43V5IE7WQjMN0ij8ccbMjPyAf1Y/2
-      tB64Jly7ptKOWYbi2Z0hqx5lBv3UMRBvSqDiBrTdNU7Kf7m9T6tPZzm1YB3FVRLC
-      CWOCCTaYG+yWwWOLyPw0z/1JTfQJYSI/48XxKDjWAfWCfUbdaFhmyoEF0z54y3eE
-      pwshf0wmxpwal8Ib0HvWQGx3EAeGM4OGXFfE8WbdHuI+pgeT8EWNZf1FLZZNJ3YH
-      2KwVPvwfS35T5w1g0AjSWzqX6KAL36I1vZIEjiuzVQKBgQD0z/zWvEWbusDGH5bX
-      ExNAb0Qj6KeMnnf0M+6N3nU05Wxmzycjw3AVfkABitHzk5l0ktkxl8sktz5j112B
-      XtdNBsUyeJ4iqyc2odV6SErbSWyALpJ3nSLiSoURyjMpxhey/zg2a6cTV3A081RQ
-      iEIJzpUuJWec/38WG5mGLRj7hQKBgQDWECyzc0loEoXzp5JlhKWGjbdrFEBpXrCn
-      6namOIBb2WvPt+xfdad5a8niyZWlaJxnru8qrpsBPNA41FJ7wtL98AxlEYsqX0wX
-      fVnz3pw1RX//1EJ6G84O7iaoydURDfGGO8IwTjndkNhTTDT15E7jaPPOpLkOSPTy
-      ViVk8lAnqwKBgQCkeDr4FQJ6ziuGr2BKXAFaD6ZqrXorCaezA1SoMSTzBZMfOtqj
-      t0BM4EWmA5prluTIoYOTQtRydT1QHDcwnAPvNrYy4z/yMKQmmvDttzW7PwfK0f8K
-      pyHxf3kI65wV24S+d6JPRWG4p8y1dihV9kTPi99DYlPK8QdzVdV9hDy9dQKBgQDP
-      7dgt219DezKoUW5vs+BBCelPVtWWRIceJC5qGVn9Xf1OQJ6WvycVV3E8HImCqVG7
-      mP3yHLauBg9QFFWmp8DhL0oq5laiqvyzmGxG6UYcrMy/iMOl7tpCQGxG6f5P2ZZw
-      yB1BZMrqgGbQyqZq7wD9/pVMdU7YJF/iAXHDU2gujwKBgQDJSyAQiG80DqAAYTqF
-      4iHLrZbm6SJXmgEbaEXd32z9+/75GG1gEktg0c+L1Ogcu5D8r7jr4mlRHtSoEIpC
-      brXrURcuU969ovT6e4WtXGPHrWaz2bGOH+fbbF3z+VVcIlpbWkpg6i620XFAYHRQ
-      yc0EBt5E5QVTNYJWaDlZelSGYQ==
-      -----END PRIVATE KEY-----
-    status: 1
-#END
+
+consumers:
+  # key-auth consumer for /otlp (start.sh replaces the placeholder with OTLP_INGEST_TOKEN from .env)
+  - username: otlp_ingest
+    plugins:
+      key-auth:
+        key: "${OTLP_INGEST_TOKEN}"
+  # basic-auth for the ops UIs (plugin_config ops-basic) when GATEWAY_AUTH=off; start.sh renders the password
+  - username: ops
+    plugins:
+      basic-auth:
+        username: ops
+        password: "${GATEWAY_OPS_PASSWORD}"
 
 # ============================================================================
 # Stream Routes (TCP/UDP)
 # ============================================================================
-# These routes enable load balancing across multiple Logstash instances
+# Log ingestion from outside (CloudHub log4j Socket appender): TCP localhost:9100 -> Fluent Bit :5000.
+# Events must carry auth_token = LOG_INGEST_TOKEN (checked by Fluent Bit).
 #
 stream_routes:
-  #
-  # Logstash TCP Input - JSON Log Ingestion (Port 5000)
-  # External: localhost:9100 -> APISIX:9100 -> logstash:5000
-  #
-  - server_addr: 172.42.0.20  # APISIX IP on ce-base-micronet
-    server_port: 9100
+  # matched by port only: host traffic arrives on whichever network address Docker forwards to
+  - server_port: 9100
     id: "1"
-    desc: "Logstash TCP log ingestion - load balanced"
+    desc: "Log ingestion (JSON over TCP) to Fluent Bit"
     upstream:
       nodes:
-        "logstash:5000": 100   # Logstash instance 1
-      type: roundrobin
-
-  #
-  # Logstash Beats Input - Filebeat/Metricbeat (Port 5044)
-  # External: localhost:9144 -> APISIX:9144 -> logstash:5044
-  #
-  - server_addr: 172.42.0.20  # APISIX IP on ce-base-micronet
-    server_port: 9144
-    id: "2"
-    desc: "Logstash Beats input - load balanced"
-    upstream:
-      nodes:
-        "logstash:5044": 100   # Logstash instance 1
+        "log-ingest:5000": 100
       type: roundrobin
 
 #END

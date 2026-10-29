@@ -6,7 +6,7 @@
 # Can be run manually or via cron for automated cleanup.
 #
 # Usage:
-#   ./config/backup/backup-cleanup.sh
+#   ./config/scripts/backup/backup-cleanup.sh
 #
 # Options:
 #   --dry-run    Show what would be deleted without actually deleting
@@ -23,7 +23,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/<area>/
 ENV_FILE="$PROJECT_ROOT/.env"
 
 # Parse arguments
@@ -56,13 +56,13 @@ set +a
 
 # OpenSearch connection details
 ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
-ES_USER="${ES_USER:-elastic}"
+ES_USER="${ES_USER:-admin}"
 ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
 # Retention settings
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-MAX_COUNT="${BACKUP_MAX_COUNT:-50}"
+MAX_COUNT="${BACKUP_MAX_COUNT:-30}"
 
 # Print banner
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
@@ -96,12 +96,8 @@ echo ""
 
 # Get all snapshots
 echo -e "${GREEN}Fetching snapshot list...${NC}"
-ALL_SNAPSHOTS=$(curl -s -u "${ES_USER}:${ES_PASSWORD}" \
-    "${ES_HOST}/_snapshot/${REPO_NAME}/_all")
-
-# Extract snapshot names and start times
-SNAPSHOT_LIST=$(echo "$ALL_SNAPSHOTS" | grep -o '"snapshot":"[^"]*","uuid":"[^"]*","[^"]*","[^"]*","start_time":"[^"]*","start_time_in_millis":[0-9]*' | \
-    awk -F'"' '{print $4","$18}' || true)
+# name,start time in ms (oldest first): _cat output, not JSON field order
+SNAPSHOT_LIST=$(curl -s -u "${ES_USER}:${ES_PASSWORD}"     "${ES_HOST}/_cat/snapshots/${REPO_NAME}?h=id,start_epoch&s=start_epoch" | awk 'NF==2 {print $1","$2"000"}')
 
 if [ -z "$SNAPSHOT_LIST" ]; then
     echo -e "${YELLOW}No snapshots found in repository${NC}"
@@ -146,7 +142,7 @@ if [ "$KEEP_COUNT" -gt "$MAX_COUNT" ]; then
     echo ""
 
     # Sort TO_KEEP by timestamp and move oldest to TO_DELETE
-    # This is a simplified approach - in production you'd want more sophisticated sorting
+    # SNAPSHOT_LIST is oldest first, so the first entries of TO_KEEP are the oldest
     for ((i=0; i<EXCESS; i++)); do
         TO_DELETE+=("${TO_KEEP[$i]}")
         unset 'TO_KEEP[$i]'

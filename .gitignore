@@ -206,3 +206,13 @@ CE-Platform/
 #
 # IMPORTANT: Never force-add files that match these patterns!
 # ====================================================================
+
+# every env file but the template holds secrets
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# test suite
+tests/.venv/
+tests/out/
+__pycache__/

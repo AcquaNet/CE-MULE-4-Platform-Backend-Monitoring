@@ -1,255 +1,83 @@
-# Architecture Overview
+# Architecture
 
-This chapter explains the overall architecture of the ELK + APISIX + Mule platform.
-
-## System Architecture
+## Overview
 
 ```
-┌──────────────────────┐
-│   External Client    │
-│  (Browser, cURL,     │
-│   CloudHub, etc.)    │
-└──────────┬───────────┘
-           │
-┌──────────▼──────────────────────────────────────────────┐
-│              APISIX Gateway (Port 9080)                  │
-│  - Reverse Proxy                                         │
-│  - Load Balancer                                         │
-│  - Health Checks                                         │
-│  - Centralized Access Control                            │
-└──────────┬──────────────────────────────────────────────┘
-           │
-    ┌──────┴──────┬─────────────┬──────────────┐
-    │             │             │              │
-┌───▼────┐  ┌────▼─────┐  ┌───▼────────┐  ┌──▼───────┐
-│Kibana  │  │  Mule    │  │ElasticSearch│  │ActiveMQ │
-│:5601   │  │ Workers  │  │   :9200     │  │ :8161   │
-│        │  │  (x2)    │  │             │  │         │
-└────────┘  └────┬─────┘  └─────────────┘  └─────────┘
-                 │
-         ┌───────┴────────┐
-         │                │
-    ┌────▼────┐     ┌────▼────┐
-    │Worker 1 │     │Worker 2 │
-    │.2:8081  │     │.30:8081 │
-    └─────────┘     └─────────┘
-         │               │
-         └───────┬───────┘
-                 │
-          ┌──────▼───────┐
-          │  Logstash    │
-          │    :5000     │
-          │    :5044     │
-          └──────┬───────┘
-                 │
-          ┌──────▼───────┐
-          │ElasticSearch │
-          │    :9200     │
-          └──────────────┘
+ clients / CloudHub / worker nodes
+        | 9443 HTTPS                     | 9100 TCP (log events)
++-------v--------------------------------v-------------------------+
+| APISIX 172.42.0.20 (standalone: config/apisix/apisix.yaml)        |
++--+---------------+--------------+-------------+----------------+--+
+   | /api/*        | /runtime-    | /auth       | /dashboards    | stream
+   | per-app routes|  manager     |             | /opensearch    |
+   |               |              |             | /jaeger /otlp  |
+   v               v              v             v                v
+ mule-<pool>-<n> <-- Runtime    Keycloak     Dashboards,       Fluent Bit
+ (pool workers)     Manager     (+Postgres)  OpenSearch,       (log-ingest)
+   |                (Docker API)             Jaeger                |
+   | logs: log-ingest:5000 ----------------------------------------+
+   | traces: jaeger:4317 --> Jaeger --+                            |
+   |                                  v                            v
+   |                           OpenSearch: jaeger-span-*,  mule-logs-*, logstash-*
+   +--> MySQL, ActiveMQ (optional)
 ```
 
 ## Components
 
-### APISIX Gateway Layer
+| Component | Container | IP (ce-base-micronet) | Notes |
+|-----------|-----------|-----------------------|-------|
+| APISIX | `apisix` | 172.42.0.20 | only entry point; see [03](03-apisix-gateway.md) |
+| Runtime Manager | `ce-base-runtime-manager` | 172.42.0.7 | runs the pool workers via the Docker socket; UI/API at `/runtime-manager/` |
+| Mule workers | `mule-<pool>-<n>` | dynamic | port 8081; heap = pool `heap_mb` (default pool 1024 MB) |
+| OpenSearch | `opensearch` | 172.42.0.10 | 9200, not published; heap `OPENSEARCH_JAVA_OPTS` (default 512 MB) |
+| Fluent Bit | `fluent-bit` (alias `log-ingest`) | 172.42.0.11 | 5000 TCP/UDP, 2020 health/metrics |
+| OpenSearch Dashboards | `opensearch-dashboards` | 172.42.0.12 | `/dashboards` |
+| Jaeger | `jaeger` | 172.42.0.13 | UI 16686, OTLP 4317/4318; stores in OpenSearch |
+| Prometheus / Grafana / Alertmanager | `prometheus`, `grafana`, `alertmanager` | .23 / .24 / .25 | all three behind admin SSO (`/prometheus`, `/grafana`, `/alertmanager`) |
+| OpenSearch exporter | `opensearch-exporter` | 172.42.0.26 | profile `opensearch-monitoring` |
+| Keycloak / Postgres | `keycloak`, `keycloak-db` | .27 / .28 | Keycloak 26, production mode (`start`), realm `mule` |
+| MySQL | `ce-base-db-backend` | 172.42.0.3 | 127.0.0.1:3306 |
+| ActiveMQ | `ce-base-apachemq-backend` | 172.42.0.5 | 127.0.0.1: 8161 console, 5672 AMQP, 61616 OpenWire |
 
-**Purpose:** Centralized API gateway for all HTTP/HTTPS traffic
+Compose creates both networks: `ce-base-micronet` (172.42.0.0/16, static IPs) and `ce-base-network`. For the
+services in each profile, see the [README](../../README.md#profiles).
 
-**Components:**
-- **APISIX Gateway** (172.42.0.20)
-  - Ports: 9080 (HTTP), 9443 (HTTPS), 9180 (Admin API), 9091 (Metrics)
-  - Main entry point for all external requests
-  - Reverse proxy and load balancer
-  - Active health monitoring of upstream services
+## Flows
 
-- **etcd** (172.42.0.21)
-  - Port: 2379
-  - Distributed configuration storage for APISIX
-  - Stores routes, upstreams, plugins configuration
+**API request:** client → `https://<host>:9443/api/...` → APISIX checks the Keycloak token (`openid-connect`, then a
+check that the token was issued to `mule-api-gateway` and carries the `api-access` role), sets `X-Tenant-ID` from
+the token's `tenant_id` claim, applies the per-IP rate limit, and sends the request round-robin to a healthy worker.
+Workers are health-checked on `/api/v1/status`. Per-app routes (`/<path>/*`) follow the same rules through the
+plugin config `mule-api-auth`.
 
-- **APISIX Dashboard** (172.42.0.22)
-  - Port: 9000
-  - Web UI for managing APISIX
-  - Route visualization and configuration
-  - Real-time monitoring
+**Logs:** the log4j Socket appender sends JSON to `log-ingest:5000`. External senders (CloudHub, worker nodes) use
+`<gateway>:9100`. Fluent Bit drops events without `auth_token` = `LOG_INGEST_TOKEN`, normalizes `tenant_id` and
+writes to `mule-logs-YYYY.MM.DD` or `logstash-YYYY.MM.DD`. See [08](08-logging-integration.md).
 
-**Key Features:**
-- Round-robin load balancing
-- Active health checks every 30 seconds
-- Automatic failover for unhealthy upstreams
-- Path-based routing with URL rewriting
-- CORS support for browser-based clients
+**Traces:** the OpenTelemetry Mule 4 agent sends OTLP/gRPC to `jaeger:4317`. External senders use
+`https://<gateway>:9443/otlp` with `x-otlp-token`. Jaeger writes to OpenSearch. See [09](09-apm-integration.md).
 
-### ELK Stack Layer
+**Deployments:** the Runtime Manager fetches apps from Maven (or takes a jar upload) and copies them into the
+workers through the Docker API. It rewrites the generated blocks in `config/apisix/apisix.yaml`, which APISIX
+hot-reloads. See [05](05-mule-backend.md) and [mule/README.md](../../mule/README.md).
 
-**Purpose:** Centralized logging and analytics
+## Security model (short)
 
-**Components:**
-- **ElasticSearch** (172.42.0.10)
-  - Internal port: 9200, 9300
-  - External access: Via APISIX at `/elasticsearch`
-  - Full-text search and analytics engine
-  - Stores logs with daily indices
+- Public: 9443 (HTTPS gateway) and 9100 (log intake, token-checked). Host only: 9080, 9091, MySQL, ActiveMQ.
+  Everything else is unpublished. `/opensearch` and the Keycloak master realm answer on 9080 only (404 on 9443).
+- `/api/*` and per-app routes need a `mule-api-gateway` token with `api-access`.
+- One Keycloak sign-in (home page https://localhost:9443/) covers every UI: realm role `admin` gets all of them; other
+  users get Dashboards with only their tenant's logs (DLS on the token's `tenant_id`). The OpenSearch API also takes
+  its own users (`admin`, tenant users of manage-tenants.sh). With `GATEWAY_AUTH=off`, `/jaeger`, `/prometheus`,
+  `/activemq` use basic auth `ops`.
+- All secrets come from the root `.env`.
 
-- **Logstash** (172.42.0.11)
-  - Ports: 5000 (TCP/UDP), 5044 (Beats), 9600 (Monitoring API)
-  - Data processing pipeline
-  - JSON parsing and timestamp extraction
-  - Routes Mule logs to `mule-logs-*` indices
+Details: [SECURITY_SETUP.md](../SECURITY_SETUP.md).
 
-- **Kibana** (172.42.0.12)
-  - Internal port: 5601
-  - External access: Via APISIX at `/kibana`
-  - Log visualization and search interface
-  - Dashboard creation and management
+## Scaling
 
-**Key Features:**
-- Daily log rotation (`mule-logs-YYYY.MM.DD`, `logstash-YYYY.MM.DD`)
-- Automatic Mule log detection and indexing
-- JSON log parsing with field extraction
-- Direct TCP/UDP access for CloudHub deployments
-
-### Mule Application Layer
-
-**Purpose:** Business logic and API implementation
-
-**Components:**
-- **Mule Worker 1** (172.42.0.2)
-  - Port: 8081 (HTTP), 8082 (HTTPS)
-  - Mule Runtime 4.4.0
-  - Separate logs and apps volumes
-
-- **Mule Worker 2** (172.42.0.30)
-  - Port: 8081 (HTTP), 8082 (HTTPS)
-  - Mule Runtime 4.4.0
-  - Separate logs and apps volumes
-
-- **Maven Service** (172.42.0.4)
-  - Downloads Mule applications from artifact repository
-  - Deploys to both workers' apps directories
-  - Runs once on startup
-
-- **ActiveMQ** (172.42.0.5)
-  - Ports: 8161 (Web Console), 5672 (AMQP), 61616 (OpenWire)
-  - Message broker for asynchronous communication
-
-- **MySQL** (172.42.0.3)
-  - Port: 3306
-  - Application database
-
-**Key Features:**
-- 2-worker deployment for high availability
-- Automatic application deployment via Maven
-- Load balanced via APISIX round-robin
-- Health checks on `/api/v1/status` endpoint
-- Integrated logging to ELK stack via Logstash
-
-## Network Architecture
-
-### Docker Networks
-
-**ce-base-micronet** (172.42.0.0/16):
-- Static IP allocation for all services
-- Internal communication between containers
-- Bridge network type
-
-**ce-base-network**:
-- External connectivity
-- Bridge network type
-
-### IP Address Allocation
-
-| Service | IP Address |
-|---------|------------|
-| Mule Worker 1 | 172.42.0.2 |
-| MySQL | 172.42.0.3 |
-| Maven Service | 172.42.0.4 |
-| ActiveMQ | 172.42.0.5 |
-| Status Viewer | 172.42.0.6 |
-| ElasticSearch | 172.42.0.10 |
-| Logstash | 172.42.0.11 |
-| Kibana | 172.42.0.12 |
-| APM Server | 172.42.0.13 |
-| APISIX Gateway | 172.42.0.20 |
-| etcd | 172.42.0.21 |
-| APISIX Dashboard | 172.42.0.22 |
-| Mule Worker 2 | 172.42.0.30 |
-
-## Traffic Flow
-
-### External HTTP Request Flow
-
-1. **External Client** → Request to `http://your-server:9080/api/v1/status`
-2. **APISIX Gateway** (172.42.0.20:9080)
-   - Receives request
-   - Matches route: `/api/*` → `mule-api-loadbalanced`
-   - Selects upstream worker via round-robin algorithm
-3. **Mule Worker** (172.42.0.2:8081 or 172.42.0.30:8081)
-   - Processes request
-   - Returns JSON response
-   - Logs to Logstash
-4. **APISIX** → Returns response to client
-
-### Logging Flow
-
-1. **Mule Worker** → Log event generated
-2. **Log4j2 Socket Appender** → Sends JSON to Logstash:5000
-3. **Logstash** → Receives, parses, enriches log data
-4. **ElasticSearch** → Stores in daily index (`mule-logs-YYYY.MM.DD`)
-5. **Kibana** → Visualizes and searches logs
-
-## Security Architecture
-
-### Production vs Development
-
-**Development (Current):**
-- Direct port exposure for debugging (9080, 9000, 5000, 5044)
-- No authentication on APISIX routes
-- ElasticSearch security disabled
-- Default APISIX admin key
-- HTTP only (no TLS)
-
-**Production (Recommended):**
-- Only expose ports 9080 (HTTP) and 9443 (HTTPS)
-- Enable APISIX authentication (JWT, API Key, OAuth)
-- Enable ElasticSearch security with TLS
-- Rotate APISIX admin key
-- Implement rate limiting
-- Add IP whitelisting for Admin API
-- Configure SSL/TLS certificates
-
-### Access Control
-
-**External Access (Production):**
-- APISIX HTTP/HTTPS ports only
-- Logstash TCP/UDP ports (for CloudHub)
-- All other services internal only
-
-**Internal Access:**
-- Services communicate via Docker network
-- Use container names or IP addresses
-- No external exposure needed
-
-## Scalability Considerations
-
-### Horizontal Scaling
-
-**Currently Scalable:**
-- Mule workers: Add more worker containers, update APISIX upstream
-- ElasticSearch: Add data nodes (requires cluster configuration)
-
-**Fixed Components:**
-- APISIX: Single instance (can be clustered with shared etcd)
-- etcd: Single node (can be clustered for HA)
-- Logstash: Single instance (can run multiple with input balancing)
-- Kibana: Single instance (typically doesn't need scaling)
-
-### Vertical Scaling
-
-Adjust heap sizes in `docker-compose.yml`:
-- ElasticSearch: `ES_JAVA_OPTS=-Xms512m -Xmx512m` (min: 2GB for production)
-- Logstash: `LS_JAVA_OPTS=-Xms256m -Xmx256m`
-- Mule workers: Update `wrapper.conf` for JVM settings
-
-## Next Chapter
-
-Continue to [Chapter 3: APISIX Gateway](03-apisix-gateway.md) to learn how to configure routes, load balancing, and manage the API gateway.
+- **Mule:** change the pool's worker count or heap in the Runtime Manager. To add capacity on other servers, use
+  worker nodes ([node/README.md](../../node/README.md)).
+- **OpenSearch:** raise `OPENSEARCH_JAVA_OPTS` (2 GB or more for production). It runs as a single node.
+- **APISIX / Fluent Bit:** single instances. A second Fluent Bit would be added as another node of the 9100
+  stream route.

@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Complete Mule 4 development platform with integrated logging, tracing, and API gateway:
 - **Apache APISIX Gateway**: API gateway and load balancer (port 9080/9443)
-- **OpenSearch Stack**: OpenSearch, Logstash, OpenSearch Dashboards for centralized logging
+- **OpenSearch Stack**: OpenSearch, Fluent Bit (log ingestion), OpenSearch Dashboards for centralized logging
 - **Jaeger**: Distributed tracing with OpenSearch backend
 - **OpenTelemetry Mule 4 Agent**: Custom tracing agent for Mule applications
-- **Mule Application**: Mule 4.4.0 backend with RESTful APIs
+- **Mule Application**: Mule 4.12 (CE, Java 17) backend with RESTful APIs
 - **Docker Infrastructure**: Load-balanced Mule workers with supporting services
 - **Multi-Tenancy**: Document-Level Security (DLS) for tenant isolation (FREE with OpenSearch)
 
@@ -17,11 +17,10 @@ Complete Mule 4 development platform with integrated logging, tracing, and API g
 
 ```
 Docker ElasticSearch/
-├── docker-compose.yml              # OpenSearch + APISIX orchestration (HTTP)
-├── docker-compose.ssl.yml          # SSL/TLS override for HTTPS
+├── docker-compose.yml              # Whole platform; include:s the Mule compose (one `up` starts all)
 ├── .env.example                    # Environment template
 ├── docs/                           # Detailed documentation
-│   ├── setup/                      # Modular setup guides (01-09)
+│   ├── setup/                      # Setup guides 01-09 (SETUP.md is the index)
 │   ├── SECURITY_SETUP.md
 │   ├── SSL_TLS_SETUP.md
 │   ├── BACKUP_SETUP.md
@@ -30,21 +29,31 @@ Docker ElasticSearch/
 │   ├── MULTITENANCY_SETUP.md       # Multi-tenant DLS guide
 │   ├── ARTIFACTORY_DEPLOYMENT.md
 │   └── DOCKER_IMAGES_EXPORT.md
-├── certs/                          # SSL/TLS certificates (git-ignored)
-│   ├── ca/, apisix/, opensearch/   # Active certificates
-│   └── extra/                      # Optional end-to-end encryption
+├── certs/                          # git-ignored: ca/ (local CA) + apisix/ (gateway cert), made by APISIX start.sh
+├── tests/                          # test suite: run.sh (unit, stack, api, ui, home), see TESTING.md
+├── scripts/                        # opensearch-start.sh (OpenSearch entrypoint: own cert, admin user),
+│                                   # setup-opensearch.sh (templates + DLS roles), docker-images/ (offline export)
 ├── config/                         # All configuration
-│   ├── apisix/                     # APISIX config and routes
-│   │   ├── config.yaml             # Main APISIX config
-│   │   └── apisix-opensearch.yaml  # OpenSearch routes configuration
-│   ├── logstash/                   # Pipeline configuration
+│   ├── apisix/                     # APISIX (standalone mode)
+│   │   ├── apisix.yaml             # THE route source (routes, upstreams, plugin_configs)
+│   │   ├── start.sh                # Entrypoint: renders apisix.yaml + certs, hot-reloads on change
+│   │   └── config/config.yaml      # APISIX server config (listeners, plugins)
+│   ├── fluent-bit/                 # Log ingestion: fluent-bit.conf + pipeline.lua (+ Dockerfile)
+│   ├── jaeger/config.yaml          # Jaeger v2 (OTLP in, OpenSearch storage, /jaeger base path)
+│   ├── keycloak/realms/            # realm mule (imported into an empty DB only)
+│   ├── opensearch-dashboards/      # dashboards-on.yml (Keycloak) / dashboards-off.yml, picked by GATEWAY_AUTH
 │   ├── prometheus/, alertmanager/, grafana/
 │   └── scripts/                    # setup/, backup/, monitoring/, ilm/, tenants/
-├── git/
-│   ├── CE-MULE-4-Platform-Backend-Mule/    # Mule 4 source
-│   ├── CE-MULE-4-Platform-Backend-Docker/  # Docker deployment
-│   └── elastic-apm-mule4-agent/            # OpenTelemetry Mule 4 Agent
-│       └── otel-mule4-agent/               # Custom OTEL agent source
+├── mule/                           # Mule platform (included by docker-compose.yml)
+│   ├── docker-compose.yml          # Runtime Manager, ActiveMQ, MySQL (workers are RM pools)
+│   ├── docker_mulesoft/            # Mule runtime image build context (the RM builds ce-mule-runtime:<mule>-java<java>-<hash>)
+│   ├── runtime-manager/            # CloudHub-style pools, deploys, properties, overview (app.py, pools.py)
+│   ├── maven-settings.xml          # repos/credentials the Runtime Manager uses
+│   └── volumes/                    # runtime data (git-ignored)
+├── node/                           # node agent for other servers (install-node.sh): pool capacity
+├── otel-mule4-agent/               # OpenTelemetry Mule 4 agent source (Maven, 0.3.0)
+├── git/                            # separate repo, only to BUILD the app (git-ignored)
+│   └── CE-MULE-4-Platform-Backend-Mule/    # Mule 4 app source
 └── CE-Platform/_sota/              # Offline installers
 ```
 
@@ -58,55 +67,109 @@ Docker ElasticSearch/
 
 | Service | IP | Ports | Access |
 |---------|-----|-------|--------|
-| APISIX Gateway | 172.42.0.20 | 9080 (HTTP), 9443 (HTTPS), 9180 (Admin) | External entry point |
-| etcd | 172.42.0.21 | 2379 | Internal |
-| APISIX Dashboard | 172.42.0.22 | 9000 | http://localhost:9000 |
-| OpenSearch | 172.42.0.10 | 9200 | Via APISIX: `/opensearch` |
-| Logstash | 172.42.0.11 | 5000 (TCP/UDP), 9600 | Via APISIX: `/logstash` |
+| APISIX Gateway | 172.42.0.20 | 9080 (HTTP, 127.0.0.1 only), 9443 (HTTPS), 9091 (metrics, 127.0.0.1 only), 9100 (TCP stream, public), 9092 (Control API, inside the container only) | External entry point |
+| Runtime Manager | 172.42.0.7 | 8080 (not published) | Via APISIX: `/runtime-manager/` |
+| OpenSearch | 172.42.0.10 | 9200 | Via APISIX: `/opensearch` (port 9080 only, i.e. host loopback) |
+| Fluent Bit (`log-ingest`) | 172.42.0.11 | 5000 (TCP/UDP), 2020 (health/metrics) | Via APISIX stream: TCP 9100 |
 | OpenSearch Dashboards | 172.42.0.12 | 5601 | Via APISIX: `/dashboards` |
-| Jaeger | 172.42.0.13 | 16686 (UI), 4317 (OTLP gRPC), 4318 (OTLP HTTP) | Via APISIX: `/jaeger` |
-| Mule Worker 1 | 172.42.0.2 | 8081 | Via APISIX: `/api/*` |
-| Mule Worker 2 | 172.42.0.30 | 8081 | Via APISIX: `/api/*` |
-| MySQL | 172.42.0.3 | 3306 | Direct |
-| ActiveMQ | 172.42.0.5 | 8161, 61616 | Via APISIX: `/activemq` |
+| Jaeger | 172.42.0.13 | 16686 (UI, API `/api/v3`), 4317/4318 (OTLP), 8888 (metrics), 13133 (health); none published | Via APISIX: `/jaeger` (SSO, realm role admin), intake `/otlp` |
+| Keycloak | 172.42.0.27 | 8080, 9000 (health, management); not published | Via APISIX: `/auth` |
+| Mule workers `mule-<pool>-<n>` | dynamic | 8081 | Via APISIX: `/api/*` (app `ce-mule-base`), per-app routes |
+| MySQL | 172.42.0.3 | 3306 (127.0.0.1 only, `MYSQL_EXTERNAL_PORT`) | Direct |
+| ActiveMQ | 172.42.0.5 | 8161, 61616, 5672 (all 127.0.0.1 only) | Via APISIX: `/activemq` |
 
 **APISIX Routes:**
 - `/dashboards` → OpenSearch Dashboards UI
-- `/opensearch/*` → OpenSearch API
-- `/logstash/*` → Logstash API (load balanced)
+- `/opensearch/*` → OpenSearch API (9080 only: 404 on 9443, no password guessing from outside)
+- `/auth/*` → Keycloak; the master realm (server admin) only on 9080 (404 on 9443; console http://localhost:9080/auth/admin/master/console/, the keycloak
+  service sets its frontend URL to 9080, sslRequired none and brute-force protection at start); realm `mule` has brute-force protection
+- `/alertmanager/*` → Alertmanager (alerting profile; admin SSO; it serves under /alertmanager itself)
+- `/otlp/*` → Jaeger OTLP/HTTP intake (external apps e.g. CloudHub; key-auth header `x-otlp-token`)
+- stream TCP 9100 → Fluent Bit :5000 (external log intake, e.g. CloudHub)
 - `/jaeger/*` → Jaeger UI and API
-- `/api/*` → Mule workers (round-robin, health checks on `/api/v1/status`)
-- `/activemq/*` → ActiveMQ console
+- `/api/*` → workers of the default app `ce-mule-base` (`# BEGIN runtime-manager app ce-mule-base` block; round-robin, health checks on `/api/v1/status`; node list generated by the RM)
+- `/<path>/*` → per-app routes set in the Runtime Manager (prefix stripped, app's pool workers)
+- `/activemq/*` → ActiveMQ console (`/activemq/api/*`, i.e. Jolokia and REST, blocked by `uri-blocker`)
 
 ## Common Commands
 
+### Tests
+```bash
+tests/run.sh                            # every suite against the running stack (~30-40 min); `unit` = no stack needed
+```
+See TESTING.md (suites, coverage, test resources `t-*` and cleanup).
+
 ### Start/Stop Services
 ```bash
-docker-compose up -d                    # Start all
-docker-compose down                     # Stop all
-docker-compose down -v                  # Stop + remove data
-docker-compose logs -f [service]        # View logs
+./install.sh                            # fresh clone or any time: .env (generated secrets) if missing, build, start, wait, print URLs
+docker compose up -d --build           # Start everything (OpenSearch stack + Mule platform)
+docker compose down                     # Stop all (the RM removes its Mule workers on stop)
+docker compose --profile "*" down -v --remove-orphans   # Full reset incl. data (then rm -rf certs mule/volumes for a fresh-clone state)
+docker compose logs -f [service]        # View logs
 ```
+Fresh-clone install is `./install.sh` and must stay zero-friction: APISIX's start.sh creates `certs/ca` + `certs/apisix`
+(local CA, localhost/apisix cert) when missing; OpenSearch applies `scripts/setup-opensearch.sh` itself in the background
+(idempotent, no setup container); every service has a healthcheck (`--wait`). No one-shot containers: nothing should sit
+"Exited". `.gitattributes` pins LF for everything read inside containers (Windows clones use core.autocrlf=true).
+One project, one command, one `.env`: the root compose `include:`s `mule/docker-compose.yml`
+(with `env_file: .env`, so the Mule part reads the root `.env` too; there is no `mule/.env`).
+
+**Profiles (lite installs):** apisix + the Runtime Manager (which runs the Mule workers) always run; everything else is a
+profile picked by `COMPOSE_PROFILES` in the root `.env`: `db`, `mq`, `logging`, `tracing`,
+`monitoring`, `alerting`, `opensearch-monitoring`, `auth`. Without `auth` (Keycloak) set
+`GATEWAY_AUTH=off` (start.sh strips openid-connect and the token check after it; /api/* then has no auth).
+With auth on, /api/* and per-app routes only accept Keycloak tokens issued to client `mule-api-gateway` (`azp`)
+that carry its `api-access` client role; X-Tenant-ID is set from the token's `tenant_id` claim (users can't edit it).
+Keycloak runs in production mode (`start`, `KC_CACHE=local`, public URL and issuer pinned by `KC_HOSTNAME`, internal callers
+kept on keycloak:8080 by `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`; `tenant_id` is declared in the realm user profile). `--profile x` on the CLI
+replaces `COMPOSE_PROFILES`. New services must get a profile unless they're core, and a dependency
+must share at least one profile with its dependents (`docker compose config` per combo catches it).
+Compose creates the networks; never `docker network create` them by hand. Host paths are all
+relative (`./volumes/...` inside the Mule folder); never put absolute paths in compose or `.env` (the one exception is
+the Docker socket `/var/run/docker.sock` mounted into the Runtime Manager).
 
 ### Access Services (via APISIX)
+**Single sign-on:** https://localhost:9443/ is the home page (links to every tool; a tool that is not running or whose profile
+is off is greyed out and not clickable, one the user may not use is hidden); one Keycloak sign-in (realm `mule`)
+covers all of them. Realm role `admin` = every tool; other users (`user`) = home, Dashboards (own tenant's logs only),
+Keycloak "My account". How each tool signs in:
+- Jaeger, Prometheus, ActiveMQ console: APISIX gateway SSO (client `gateway-sso`, plugin_configs `sso`/`sso-admin` in
+  apisix.yaml; session cookie keyed by `GATEWAY_SESSION_SECRET`, holds only the ID token or it outgrows nginx's header
+  limit; a serverless-pre-function drops client-sent `X-ID-Token`, the role check trusts it and needs `azp` gateway-sso or
+  mule-api-gateway; responses get `X-Frame-Options: DENY`; a cross-site `/logout` is refused). The gateway signs in to the
+  ActiveMQ console itself. Scripts use a bearer token of an admin user (below).
+- Grafana: generic OAuth (client `grafana`), auto-login, realm role admin = Admin of the Grafana org (not server admin), others refused. Local break-glass user
+  `GRAFANA_ADMIN_USER` (default `grafana-admin`: not `admin`, that login comes from Keycloak) at `/grafana/login?disableAutoLogin=true`.
+- OpenSearch Dashboards: openid (client `dashboards`, `config/opensearch-dashboards/dashboards-on.yml`; https only);
+  OpenSearch takes the ID token (openid domain first, basic second, written by setup-opensearch.sh): `roles` claim =
+  backend roles, admin -> all_access, user -> `sso_tenant_logs` (DLS `${attr.jwt.tenant_id}`, Global tenant read-only)
+  + kibana_user. Only tokens issued to client `dashboards` (`required_audience`).
+- Runtime Manager and Keycloak admin console (`/auth/admin/mule/console/`, realm user admin has realm-admin): Keycloak.
+`GATEWAY_AUTH=off`: start.sh points the SSO'd routes at `ops-basic` (user `ops` / `GATEWAY_OPS_PASSWORD`), Grafana
+uses its local login, Dashboards mounts `dashboards-off.yml`, the home page is public. Sign out: `/logout`.
 ```bash
-# OpenSearch Dashboards
-curl http://localhost:9080/dashboards
-
-# OpenSearch API (requires auth)
-curl -k -u admin:admin https://localhost:9200/_cluster/health?pretty
-
-# Jaeger UI
-curl http://localhost:16686/jaeger/
-
-# Mule API (load balanced)
-curl http://localhost:9080/api/v1/status
+set -a; . ./.env; set +a                     # the examples below use .env variables
+curl -k https://localhost:9443/dashboards/   # OpenSearch Dashboards (9200/16686 aren't published)
+curl -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "http://localhost:9080/opensearch/_cluster/health?pretty"
+# Mule API: token of client mule-api-gateway with role api-access (401 without, 403 with another client's)
+TOKEN=$(curl -sk https://localhost:9443/auth/realms/mule/protocol/openid-connect/token -d grant_type=password \
+  -d client_id=mule-api-gateway -d client_secret="$MULE_GATEWAY_CLIENT_SECRET" -d username=developer \
+  -d password="$KEYCLOAK_REALM_DEV_PASSWORD" | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
+curl -k -H "Authorization: Bearer $TOKEN" https://localhost:9443/api/v1/status
+# Jaeger/Prometheus from scripts: the same request with username=admin / KEYCLOAK_REALM_ADMIN_PASSWORD (realm role admin)
+ADMIN_TOKEN=$(curl -sk https://localhost:9443/auth/realms/mule/protocol/openid-connect/token -d grant_type=password \
+  -d client_id=mule-api-gateway -d client_secret="$MULE_GATEWAY_CLIENT_SECRET" -d username=admin \
+  -d password="$KEYCLOAK_REALM_ADMIN_PASSWORD" | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
+curl -k -H "Authorization: Bearer $ADMIN_TOKEN" https://localhost:9443/jaeger/api/v3/services
 ```
 
-### APISIX Admin
+### APISIX Routes
+APISIX runs in **standalone mode**: `config/apisix/apisix.yaml` is the only route source.
+There is no etcd, no Admin API and no APISIX Dashboard. Edit the file and save;
+`config/apisix/start.sh` re-renders it inside the container within ~2s and APISIX hot-reloads.
 ```bash
-# Dashboard: http://localhost:9000 (admin/admin)
-curl http://localhost:9180/apisix/admin/routes -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1"
+docker run --rm --network container:apisix curlimages/curl:8.10.1 -s http://127.0.0.1:9092/v1/healthcheck   # Control API (container-local, shows secrets; no curl in the image; /v1/routes, /v1/upstreams also work: config/apisix/lua shadows the stock module, which 500s)
+docker compose logs apisix | grep -i "error\|rendered"
 ```
 
 ### Mule Build/Deploy
@@ -115,20 +178,41 @@ cd "git/CE-MULE-4-Platform-Backend-Mule"
 ./01-build-and-deploy.sh    # Auto-increment, build, deploy to Artifactory
 ```
 
-### Mule Docker Platform
+### Mule Docker Platform (runtime pools)
+Workers are **runtime pools** run by the Runtime Manager, not compose services: a pool = Mule version, Java, heap,
+JVM options, replicas; containers `mule-<pool>-<n>` (labels `rm.pool`, `rm.spec`) created through the Docker API
+(socket mounted into the RM). The RM builds `ce-mule-runtime:<mule>-java<java>-<hash>` from `mule/docker_mulesoft`
+(downloads Mule CE from MuleSoft's public repo, sha1-checked, eclipse-temurin base). Java must match
+(4.4: 8/11, 4.5-4.8: 8/11/17, 4.9+: 17). Editing a pool replaces its workers one at a time and redeploys their apps.
+The `default` pool is created on first start from `MULE_VERSION`/`MULE_JAVA_VERSION`/`RM_DEFAULT_POOL_*` (.env), then
+edited in the UI/API. Workers get the RM's `WORKER_<NAME>` env as `<NAME>` + `MULE_ARGS` (heap/JVM options as `-M` args).
+The RM removes its workers when it stops (so `docker compose down` can drop the networks) and recreates them on start:
+restarting the RM restarts the workers. Runtime path is fixed: `/opt/mule/mule-standalone`. Heap defaults go in
+`mule/docker_mulesoft/images/wrapper-platform.conf` (appended to the stock `wrapper.conf` at build); other JVM
+flags are `-M<flag>` args in `entypoints/mule-start.sh`. Never use `conf/wrapper-additional.conf` (Mule regenerates
+it on every start) or `wrapper.java.additional.N` lines (wrapper 3.2.x stops at the first index gap, stock indexes vary).
+
+**Nodes (other servers):** `node/` = node agent only (`install-node.sh`; HTTPS :7443, bearer `NODE_TOKEN`, cert pinned by
+SHA-256 fingerprint). It proxies an allowlist of Docker API calls, only for `mule-*` containers with `rm.pool` label and
+`ce-mule-runtime:*` images (no binds/privileged/host network). Registered via `/api/nodes` (`data/nodes.json`, token
+Fernet-encrypted); a pool spec `nodes: {"local": n, "<node>": m}` (or `replicas` = local only). Remote workers
+`mule-<pool>-<node>-<n>` publish 8081-8090 on a 10-port block from 18000 (bridge network), send logs to
+`<gateway>:9100` and traces to `https://<gateway>:9443/otlp`, trust the platform CA (`PLATFORM_CA_PEM`); the
+gateway name must be in the cert: `GATEWAY_HOSTNAMES` in `.env`. A down node: 5 s timeout, skipped 30 s, its workers
+left untouched, pool retried. Tests: `python node/agent/test_agent.py`. See `node/README.md`.
 ```bash
-cd "git/CE-MULE-4-Platform-Backend-Docker/CE_Microservice"
-docker-compose up -d
-docker-compose logs -f ce-base-mule-backend-1
+docker ps --filter label=rm.pool                 # pool workers
+docker logs -f mule-default-1                    # a worker's console
+docker exec mule-default-1 tail -f /opt/mule/mule-standalone/logs/mule.log
 ```
 
 ### OpenSearch Queries
 ```bash
 # List indices
-docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/_cat/indices?v"
+docker exec opensearch curl -s -k -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "https://localhost:9200/_cat/indices?v"
 
 # Query Mule logs
-docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search?pretty" \
+docker exec opensearch curl -s -k -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "https://localhost:9200/mule-logs-*/_search?pretty" \
   -H 'Content-Type: application/json' \
   -d '{"query": {"match": {"level": "ERROR"}}}'
 ```
@@ -136,15 +220,16 @@ docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-lo
 ### Jaeger Tracing
 ```bash
 # List services
-curl -s "http://localhost:16686/jaeger/api/services"
+curl -sk -H "Authorization: Bearer $ADMIN_TOKEN" "https://localhost:9443/jaeger/api/v3/services"   # ADMIN_TOKEN: see Access Services
 
 # Query traces
-curl -s "http://localhost:16686/jaeger/api/traces?service=ce-mule-base-worker-1&limit=10"
+curl -sk -H "Authorization: Bearer $ADMIN_TOKEN" "https://localhost:9443/jaeger/api/v3/traces?query.service_name=ce-mule-base&query.start_time_min=$(date -u -d -1hour +%FT%TZ)&query.start_time_max=$(date -u +%FT%TZ)&query.num_traces=10"   # OTLP JSON; service = app name, resource attr worker.id = container
 ```
 
-### Test Logstash
+### Test log ingestion
 ```bash
-echo '{"application":"test","log_type":"mule","level":"INFO","message":"Test","tenant_id":"acme-corp"}' | nc localhost 5000
+# auth_token must be LOG_INGEST_TOKEN or the event is dropped; 9100 = APISIX stream proxy -> fluent-bit:5000
+echo '{"auth_token":"<LOG_INGEST_TOKEN>","application":"test","log_type":"mule","level":"INFO","message":"Test","tenant_id":"acme-corp"}' | nc localhost 9100
 ```
 
 ## Mule Application
@@ -152,7 +237,7 @@ echo '{"application":"test","log_type":"mule","level":"INFO","message":"Test","t
 **Location:** `git/CE-MULE-4-Platform-Backend-Mule`
 
 **Key Files:**
-- `pom.xml`: Maven config (Mule 4.4.0-20250919)
+- `pom.xml`: Maven config (app.runtime 4.12.0, Java 17; `skipAST` because the plugin checks Java 25)
 - `src/main/mule/`: Flow definitions
 - `src/main/resources/api/ce-backend.raml`: API spec
 - `src/main/resources/log4j2.xml`: Logging config with tenant_id support
@@ -162,9 +247,65 @@ echo '{"application":"test","log_type":"mule","level":"INFO","message":"Test","t
 
 **Build Process:** Script reads version from `common.properties`, auto-increments, commits, builds, deploys to JFrog Artifactory.
 
+## Runtime Manager (CloudHub-style deployments)
+
+**Location:** `mule/runtime-manager` (`app.py` HTTP/apps/Maven/auth, `pools.py` Docker API; stdlib + `cryptography`)
+**UI/API:** https://localhost:9443/runtime-manager/ through APISIX (routes `runtime-manager-root`/`runtime-manager` in
+apisix.yaml: prefix stripped, 512 MB body limit via client-control, no gateway auth; no published port). All page URLs
+are relative and server redirects follow the path of `RM_PUBLIC_URL`. The cert comes from a local CA: `curl --cacert certs/ca/ca.crt`
+(Windows curl also `--ssl-no-revoke`; or `-k`). **API docs:** `/api/docs` (page) and `/api/openapi.json` (OpenAPI 3, public, servers relative) also linked
+from API & settings; `test_app.py` fails if a route is undocumented or a documented one isn't routed. Browser sign-in is Keycloak (realm `mule`, client `runtime-manager`, needs realm role
+`RM_OIDC_ROLE`, default `admin`; test user admin / `KEYCLOAK_REALM_ADMIN_PASSWORD`) while `GATEWAY_AUTH=on`; code flow + PKCE, the
+browser goes to Keycloak via APISIX `https://localhost:9443/auth`, the code exchange goes straight to `keycloak:8080`.
+Sessions are in memory (8 h; a restart signs everyone out). Basic `RM_USER`/`RM_PASSWORD` always works for scripts;
+**API tokens** (`Authorization: Bearer rm_...`, created in UI "API & settings", SHA-256 stored, can't mint tokens) for pipelines.
+New realm clients only appear after a realm re-import (Keycloak imports `config/keycloak/realms` on an empty DB).
+
+- UI: **Applications** (per app: Overview, Properties, Logs (search over the last 2 MB: Mule-style words/"phrase"/OR/-word/
+  `*`/`level:` `logger:` `thread:` `processor:` `event:`, or a JavaScript regex; priority filter), Settings; header has the Updates Auto/Notify/Off switch,
+  Check, Update, Restart, Delete), **Runtime pools** (create/edit/delete, rollout progress, worker health),
+  **API & settings** (tokens, update-check interval, pipeline curl examples). Overview data:
+  `GET /api/apps/<app>/overview?minutes=` from Jaeger (root spans, newest 1500 per window; tracing profile) and
+  OpenSearch `mule-logs-*` (logging profile); either missing greys out its panels.
+- Deploy = `PUT /api/apps/<app>`: JSON `{pool, workers, group, artifact, version, updates, properties,
+  secureProperties, route}` (Maven) or a jar body (`Content-Type: application/java-archive`, `?pool=&workers=&path=&port=`).
+  Only jar/source/pool/workers/properties changes redeploy; updates mode and route are just saved.
+- **Workers per app** (`workers`): `all` (default), a count (least-loaded workers, then kept in `placed`; after a pool
+  scale in/out the app is re-placed to keep the count) or a list of worker names (pinned; runs nowhere if they're gone).
+  Placement, rolling updates, the app's route and `# BEGIN runtime-manager app <name>` node blocks use only those workers.
+- **Properties** (CloudHub "properties"): written to `$MULE_HOME/.mule/<app>/deployment-properties/deployment.properties`
+  before the jar, so Mule applies them on (re)deploy and they override the app's own. **Secure** ones are Fernet-
+  encrypted at rest with `RM_SECRETS_KEY` (.env), write-only (API returns names only; `null` keeps a stored value).
+  `PUT /api/apps/<app>/properties` replaces the sets and restarts the app (`?restart=0` to just save).
+- Default app: `MULEAPP_GROUP_ID/ARTIFACT_ID/VERSION` (root `.env`) deployed as `<artifactId>` on the default pool at
+  first start, redeployed when `MULEAPP_VERSION` changes. State: `seed` key in `/data/artifacts/<app>.json`.
+- Maven uses `mule/maven-settings.xml` (active profiles' repos, `<servers>` credentials, mirrors, `${env.X}`), with
+  `ATINA_REPOSITORY_URL` tried first. Version can be fixed, `RELEASE`, `LATEST` or `x-SNAPSHOT`.
+- Updates per app: `auto` (deploy new builds/releases; default for SNAPSHOT/RELEASE/LATEST), `notify` (flag only;
+  default for pinned), `off` (not checked; uploads are always off). Interval: UI setting (`/data/settings.json`,
+  default `RM_MAVEN_POLL_SECONDS`/300 s; 0 = Check button only).
+- Worker I/O through the Docker API only (archive upload + exec): jar copied as `.<app>.jar.part` then renamed;
+  undeploy deletes `<app>.jar` + `<app>-anchor.txt`. Status: `STARTED` (anchor), `DEPLOYING` (jar), `FAILED` (dir, no anchor).
+- APISIX: per-app routes in the `BEGIN runtime-manager` block (block YAML + a `# rm-route {json}` record line; APISIX's
+  tinyyaml can't parse nested flow JSON), upstream = the app's pool workers, prefix stripped by proxy-rewrite,
+  `plugin_config_id: mule-api-auth`. Any upstream's nodes may hold `# BEGIN runtime-manager pool <name>` ...
+  `# END runtime-manager pool <name>`, rewritten with that pool's workers (`app <name>` = that app's workers; the `/api/*` upstream follows `app ce-mule-base`).
+  Apps sharing a pool need distinct HTTP ports.
+
+```bash
+curl -H "Authorization: Bearer $RM_TOKEN" -X PUT -H "Content-Type: application/json" https://localhost:9443/runtime-manager/api/apps/orders-api \
+  -d '{"pool":"default","group":"com.acqua","artifact":"orders-api","version":"1.4.2","properties":{"db.host":"mysql"},"secureProperties":{"db.password":"x"}}'
+curl -H "Authorization: Bearer $RM_TOKEN" -X PUT -H "Content-Type: application/java-archive" --data-binary @app.jar \
+  "https://localhost:9443/runtime-manager/api/apps/orders-api?pool=default&path=/orders&port=8091"
+curl -u admin:$RM_PASSWORD -X PUT -H "Content-Type: application/json" https://localhost:9443/runtime-manager/api/pools/edge \
+  -d '{"mule_version":"4.11.0","java_version":"17","heap_mb":1024,"replicas":2,"jvm_options":["-XX:+UseG1GC"]}'
+curl -u admin:$RM_PASSWORD -X DELETE https://localhost:9443/runtime-manager/api/apps/orders-api
+python mule/runtime-manager/test_app.py   # self-check
+```
+
 ## OpenTelemetry Mule 4 Agent
 
-**Location:** `git/elastic-apm-mule4-agent/otel-mule4-agent`
+**Location:** `otel-mule4-agent`
 
 Custom OpenTelemetry agent that instruments Mule 4 applications for distributed tracing with Jaeger.
 
@@ -176,20 +317,18 @@ Custom OpenTelemetry agent that instruments Mule 4 applications for distributed 
 
 **Build:**
 ```bash
-cd git/elastic-apm-mule4-agent/otel-mule4-agent
-mvn clean package -DskipTests
-# Output: target/otel-mule4-agent-0.1.0.jar
+cd otel-mule4-agent
+mvn clean install -DskipTests     # 0.3.0 into ~/.m2; the app depends on io.opentelemetry.mule4:otel-mule4-agent
 ```
 
-**Deployment:**
-The agent JAR is automatically loaded by Mule workers via:
-1. Copy to app's `lib/` folder
-2. Configure via `tracer.xml` in the Mule app
-3. Set environment variables for OTEL configuration
+**In the app:** Maven dependency + `src/main/resources/tracer.xml` (`<object>`s: `OtelStarter` with
+`serviceName=${app.name}`, `serviceVersion=${ce.version}`, plus the three notification listeners). One SDK per app,
+closed on undeploy (no leaked exporter threads). Root spans carry `http.method/target/route/status_code` (status from
+`vars.httpStatus`, else 500 on error / 200) and `tenant.id` (X-Tenant-ID); the Runtime Manager overview reads these.
 
-**Environment Variables (Mule workers):**
+**Environment Variables (Mule workers):** service name/version come from the app, not the worker:
 ```yaml
-OTEL_SERVICE_NAME: ce-mule-base-worker-1
+OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local-docker,worker.id=mule-default-1   # worker.id = container
 OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
 OTEL_EXPORTER_OTLP_PROTOCOL: grpc
 OTEL_TRACES_EXPORTER: otlp
@@ -197,44 +336,46 @@ OTEL_METRICS_EXPORTER: none
 OTEL_LOGS_EXPORTER: none
 ```
 
-## Logstash Pipeline
+## Log ingestion (Fluent Bit)
 
-**Config:** `config/logstash/pipeline/logstash.conf`
+**Config:** `config/fluent-bit/` (built as `ce-fluent-bit`, <10 MB RAM; the image is distroless, a static busybox is
+copied in only for the healthcheck). Service `fluent-bit`, network alias `log-ingest`, profile `logging`.
 
-**Inputs:** Beats (5044), TCP/UDP (5000)
+**Inputs:** JSON over TCP/UDP 5000 (no Beats). External: APISIX stream TCP 9100. Mule log4j appender "logs":
+`${sys:logs.host:-log-ingest}`:`${sys:logs.port:-5000}`, token `${sys:logs.token:-${env:LOG_INGEST_TOKEN}}`.
 
-**Index Routing:**
-- Mule logs (detected via `log_type` or `application` field) → `mule-logs-YYYY.MM.dd`
-- Others → `logstash-YYYY.MM.dd`
+**pipeline.lua:** drops events without `auth_token` = `LOG_INGEST_TOKEN` (then removes it); `tenant_id` cleaned
+(`[A-Za-z0-9_-]`, lowercase, `unknown` if missing, original kept in `tenant_id_original`); event time from log4j
+`instant`/`timeMillis`; `host` → `source_host`. A JSON object in `message` is merged first (parser filter).
+
+**Index Routing:** Mule events (`log_type: mule` or an `application` field) → `mule-logs-YYYY.MM.DD`, others →
+`logstash-YYYY.MM.DD` (name kept for the index templates, DLS roles and ISM policy).
 
 **Mule Log Fields:** `tenant_id`, `application`, `environment`, `worker_id`, `level`, `loggerName`, `message`, `correlationId`, `@timestamp`
 
-**Output:** OpenSearch with authentication
-```ruby
-opensearch {
-  hosts => ["https://opensearch:9200"]
-  user => "admin"
-  password => "admin"
-  ssl => true
-  ssl_certificate_verification => false
-}
-```
+## Traces from outside (CloudHub)
+
+Jaeger's OTLP ports aren't published. External apps send OTLP/HTTP to `https://<gateway>:9443/otlp/v1/traces` with
+header `x-otlp-token: <OTLP_INGEST_TOKEN>` (APISIX key-auth consumer `otlp_ingest`; start.sh renders the key from the
+env, a random one if unset). CloudHub sets, in its Properties tab (system properties): `logs.host/port/token` (logs via
+9100) and `otel.exporter.otlp.endpoint=https://<gateway>:9443/otlp`, `otel.exporter.otlp.protocol=http/protobuf`,
+`otel.exporter.otlp.headers=x-otlp-token=...` (see the app's `src/main/resources/config/cloudhub.properties.example`). Needs a cert CloudHub
+trusts (Let's Encrypt) and its egress IPs allowed on 9443/9100.
 
 ## SSL/TLS
 
-**Default:** SSL termination at APISIX gateway (port 9443)
+**Default:** SSL termination at APISIX gateway (port 9443). APISIX serves HTTPS whenever
+`certs/apisix/apisix.crt` + `apisix.key` exist; `start.sh` injects them at render time (certs are
+never stored in `apisix.yaml`) and picks up regenerated/renewed certs automatically.
 
-**Generate Certs:**
+**Certificates:** `start.sh` creates `certs/ca` (local CA, trust `certs/ca/ca.crt`) and `certs/apisix` (localhost, apisix,
+127.0.0.1 + `GATEWAY_HOSTNAMES`) on first start and re-issues the gateway cert when a name is missing.
 ```bash
-./config/scripts/setup/generate-certs.sh
-./config/scripts/setup/generate-certs.sh --domain mydomain.local
+./config/scripts/setup/generate-certs.sh --domain mydomain.local   # add names to GATEWAY_HOSTNAMES, re-issue
+./config/scripts/setup/generate-certs.sh --force [--new-ca]        # new gateway cert (and CA)
 ```
-
-**Enable SSL:**
-```bash
-# In .env: SSL_ENABLED=true
-docker-compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
-```
+Server certs need `keyUsage = digitalSignature, keyEncipherment` (Chrome rejects RSA certs without
+digitalSignature: `ERR_SSL_KEY_USAGE_INCOMPATIBLE`); the APISIX key is 644 because APISIX runs as non-root.
 
 **Let's Encrypt:**
 ```bash
@@ -247,14 +388,12 @@ For complete SSL setup, see [SSL_TLS_SETUP.md](docs/SSL_TLS_SETUP.md).
 
 OpenSearch uses Index State Management (ISM) instead of ILM.
 
-**Defaults:** 2 years retention, 1GB rollover
+Delete-by-age policies (ism_template, so new daily indices get them; no rollover: indices are already daily):
+`mule-logs-*` / `logstash-*` 730 days, `jaeger-span-*` / `jaeger-service-*` 30 days
+(`MULE_LOGS_RETENTION_DAYS`, `LOGSTASH_LOGS_RETENTION_DAYS`, `JAEGER_RETENTION_DAYS` in `.env`).
 
 ```bash
-./config/scripts/setup/setup-retention-policy.sh
-
-# Custom:
-export MULE_LOGS_RETENTION_DAYS=365
-./config/scripts/setup/setup-retention-policy.sh
+./config/scripts/ilm/setup-retention-policy.sh [--verify]   # idempotent; re-run after changing a value
 ```
 
 See [RETENTION_POLICY_GUIDE.md](docs/RETENTION_POLICY_GUIDE.md).
@@ -262,36 +401,37 @@ See [RETENTION_POLICY_GUIDE.md](docs/RETENTION_POLICY_GUIDE.md).
 ## Backup
 
 ```bash
-./config/scripts/backup/configure-backup.sh   # Initial setup
-./config/scripts/backup/backup.sh             # Create backup
-./config/scripts/backup/restore.sh snapshot   # Restore
+./config/scripts/backup/configure-backup.sh   # register the snapshot repository (once)
+./config/scripts/backup/backup.sh             # snapshot (BACKUP_INDICES, default today's indices)
+./config/scripts/backup/restore.sh <snapshot> [pattern]   # closes matching indices, restores (never dot-indices)
+./config/scripts/backup/backup-cleanup.sh [--dry-run]     # BACKUP_RETENTION_DAYS / BACKUP_MAX_COUNT
 ```
+Snapshots (`fs`) live in `/usr/share/opensearch/data/snapshots` (`path.repo`), i.e. inside the `opensearch-data`
+volume: they protect against deleted/corrupt indices, not against losing the volume (copy them off the host for that).
 
 See [BACKUP_SETUP.md](docs/BACKUP_SETUP.md).
 
 ## Monitoring
 
 ```bash
-./config/scripts/monitoring/check-health.sh           # Basic check
-./config/scripts/monitoring/check-health.sh --watch   # Continuous
+./config/scripts/monitoring/check-health.sh [--watch]       # compose healthchecks, pool workers, cluster status
+./config/scripts/monitoring/setup-monitoring.sh [--reload]  # render alertmanager.yml (alerting profile), restart Prometheus
 ```
 
-**Dashboards:**
-- Prometheus: http://localhost:9080/prometheus
-- Grafana: http://localhost:9080/grafana
-- Alertmanager: http://localhost:9080/alertmanager
-- Jaeger: http://localhost:16686/jaeger/
+**Dashboards** (Keycloak single sign-on, realm role admin; see Access Services):
+- Prometheus: https://localhost:9443/prometheus/
+- Grafana: https://localhost:9443/grafana/
+- Alertmanager: https://localhost:9443/alertmanager/ (alerting profile)
+- Jaeger: https://localhost:9443/jaeger/
 
 See [MONITORING_SETUP.md](docs/MONITORING_SETUP.md).
 
 ## Docker Images Export (Offline)
 
 ```bash
-# Export (machine with internet)
-./config/scripts/docker-images/export-images.sh
-
-# Import (target machine)
-./import-images.sh
+scripts/docker-images/export-images.sh [out.tar]   # internet: every compose image + ce-mule-runtime:* (pull/build first)
+scripts/docker-images/import-images.sh [out.tar]   # offline server: docker load
+NO_BUILD=1 ./install.sh                            # offline: use the loaded images, no rebuild
 ```
 
 See [DOCKER_IMAGES_EXPORT.md](docs/DOCKER_IMAGES_EXPORT.md).
@@ -299,22 +439,19 @@ See [DOCKER_IMAGES_EXPORT.md](docs/DOCKER_IMAGES_EXPORT.md).
 ## Security
 
 **Status:**
-- ✅ OpenSearch Security enabled (auth required, default: admin/admin)
+- ✅ OpenSearch Security enabled (auth required: admin / `OPENSEARCH_ADMIN_PASSWORD`, set on first start; OpenSearch 2.19)
 - ✅ Document-Level Security (DLS) enabled for multi-tenancy (FREE)
-- ⚠️ SSL disabled by default (enable for production)
+- ✅ HTTPS on 9443 by default (local CA); plain HTTP 9080 only on 127.0.0.1
 
 **Quick Setup:**
 ```bash
-./config/scripts/setup/generate-secrets.sh
-docker-compose up -d
-# OpenSearch Dashboards: http://localhost:9080/dashboards (admin/admin)
+./install.sh   # fresh clone: .env with generated secrets, build, start, wait, print URLs
 ```
 
 **Production Checklist:**
-- Enable TLS (see SSL_TLS_SETUP.md)
-- Change APISIX admin password (admin/admin) and API key
-- Change OpenSearch admin password
-- Change default passwords (Grafana, MySQL)
+- Public certificate for 9443 (Let's Encrypt, see SSL_TLS_SETUP.md); keep 9080 loopback-only
+- Keep `.env` secret (all passwords are generated there; no defaults)
+- Rotate secrets by editing `.env` (OpenSearch admin password only applies on first start)
 - Configure firewall rules
 
 See [SECURITY_SETUP.md](docs/SECURITY_SETUP.md).
@@ -324,14 +461,16 @@ See [SECURITY_SETUP.md](docs/SECURITY_SETUP.md).
 **Status:** Document-Level Security (DLS) enabled for tenant isolation - **FREE with OpenSearch!**
 
 Each tenant can only view logs containing their specific `tenant_id`. Tenants are extracted from:
-1. `X-Tenant-ID` request header (highest priority)
+1. `X-Tenant-ID` request header, which APISIX always sets itself from the verified token's `tenant_id` claim
+   (a `serverless-post-function` after openid-connect on `/api*` and `mule-api-auth`; a client's own header is dropped,
+   otherwise any caller could book its logs/traces to another tenant)
 2. JWT `tenant_id` claim (from Keycloak)
 3. Default "unknown"
 
-**Setup Multi-Tenancy:**
-```bash
-./config/scripts/tenants/setup-multitenancy.sh
-```
+**Setup Multi-Tenancy:** nothing to run: `scripts/setup-opensearch.sh` applies templates and DLS roles on every
+OpenSearch start. No demo config: `scripts/opensearch-start.sh` (the entrypoint) makes a per-install node cert
+(keytool, `data/.certs`) and `admin` (OPENSEARCH_ADMIN_PASSWORD) is the only user; there is no admin cert. Tenant users
+only come from `manage-tenants.sh` (OpenSearch security API through `localhost:9080/opensearch`).
 
 **Tenant Management:**
 ```bash
@@ -351,22 +490,19 @@ Each tenant can only view logs containing their specific `tenant_id`. Tenants ar
 ./config/scripts/tenants/manage-tenants.sh delete acme-corp
 ```
 
-**Test with Tenant Header:**
+**Test with a tenant:** the tenant comes from the token (Keycloak user attribute `tenant_id`), not from a header:
 ```bash
-curl -H "X-Tenant-ID: acme-corp" http://localhost:9080/api/v1/status
+curl -k -H "Authorization: Bearer $TOKEN" https://localhost:9443/api/v1/status
 ```
 
 **Test DLS in OpenSearch:**
 ```bash
 # Admin sees all documents
-docker exec opensearch curl -s -k -u admin:admin "https://localhost:9200/mule-logs-*/_search" | grep tenant_id
+docker exec opensearch curl -s -k -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "https://localhost:9200/mule-logs-*/_search" | grep tenant_id
 
 # Tenant user only sees their documents
-docker exec opensearch curl -s -k -u acme_user:AcmePass123! "https://localhost:9200/mule-logs-*/_search" | grep tenant_id
+docker exec opensearch curl -s -k -u acme_user:SecurePass "https://localhost:9200/mule-logs-*/_search" | grep tenant_id
 ```
-
-**Keycloak SSO (Optional):**
-Set `KIBANA_OIDC_ENABLED=true` in `.env` for Keycloak OIDC authentication with OpenSearch Dashboards.
 
 See [MULTITENANCY_SETUP.md](docs/MULTITENANCY_SETUP.md).
 
@@ -380,48 +516,36 @@ Trace data is stored in Jaeger indices within OpenSearch:
 | `jaeger-service-*` | Service metadata |
 
 **View APM Data:**
-1. **Jaeger UI** (recommended): http://localhost:16686/jaeger/
-   - Select service: `ce-mule-base-worker-1` or `ce-mule-base-worker-2`
+1. **Jaeger UI** (recommended): https://localhost:9443/jaeger/
+   - Select service: the app name (e.g. `ce-mule-base`); tag `worker.id` = worker container
    - View traces with timing and span hierarchy
 
-2. **OpenSearch Dashboards**: http://localhost:9080/dashboards
+2. **OpenSearch Dashboards**: https://localhost:9443/dashboards/
    - Create index pattern: `jaeger-span-*` (time field: `startTimeMillis`)
    - Use Discover to search spans
 
 ## Configuration Reference
 
-**Memory Settings:**
-- OpenSearch: 512MB heap (production: 2GB+)
-- Logstash: 256MB heap
+**Memory rules** (numbers per profile: docs/setup/01-quick-start.md; knobs: docs/setup/06-configuration.md):
+- APISIX: `nginx_config.worker_processes: 2` (default = one ~36 MB worker per CPU core). config.yaml changes need
+  `docker compose restart apisix` (only apisix.yaml hot-reloads).
+- Mule pool workers: heap = pool `heap_mb` (default pool 1 GB) via `MULE_INIT_HEAP_MB`/`MULE_MAX_HEAP_MB` env ->
+  `wrapper-platform.conf` `%VAR%`; start at 256 MB, `-XX:-AlwaysPreTouch`. Never `-M-Xms/-Xmx`: the wrapper appends its
+  own initmemory/maxmemory after all -M args, so they always lose (verify with `jcmd <pid> VM.flags`, not the cmdline).
+- Runtime image tag = `ce-mule-runtime:<mule>-java<java>-<hash of mule/docker_mulesoft>`: editing the build context
+  builds a new image and rolls the workers; images no pool uses are pruned after each rollout.
 
 **Environment Variables:**
 - `MULEAPP_GROUP_ID`, `MULEAPP_ARTIFACT_ID`, `MULEAPP_VERSION`: Maven coordinates
 - `ATINA_REPOSITORY_URL`: Artifactory URL
-- `OPENSEARCH_PASSWORD`: OpenSearch admin password (default: admin)
-- `SSL_ENABLED`: Enable SSL/TLS
-- `LOGSTASH_AUTH_TOKEN`: Token for Logstash authentication
+- `OPENSEARCH_ADMIN_PASSWORD`: OpenSearch admin password (generated into `.env`; no default)
+- `LOG_INGEST_TOKEN`: token every log event must carry (Fluent Bit drops the rest)
+- `OTLP_INGEST_TOKEN`: `x-otlp-token` for the `/otlp` trace intake
 
 **Important Notes:**
 1. OpenSearch and Mule share networks (`ce-base-micronet`, `ce-base-network`)
-2. Mule connects to Logstash via hostname `logstash:5000`
-3. APISIX requires etcd to be healthy before starting
-4. APISIX Admin API key: `edd1c9f034335f136f87ad84b625c8f1` (change in production!)
-5. Jaeger uses OpenSearch as storage backend with OTLP protocol
-6. OpenTelemetry Mule 4 Agent version: 0.1.0 (OpenTelemetry SDK 1.32.0)
+2. Mule sends logs to Fluent Bit via hostname `log-ingest:5000`
+3. APISIX has no `depends_on`: upstreams resolve per request, so the gateway starts even if a backend is down
+4. Jaeger uses OpenSearch as storage backend with OTLP protocol
+5. OpenTelemetry Mule 4 Agent version: 0.3.0 (OpenTelemetry SDK 1.67.0, shaded; the installed pom lists no OTel deps)
 
-## Migration from ELK Stack
-
-This platform was migrated from ELK (ElasticSearch, Logstash, Kibana) to OpenSearch stack:
-
-| ELK Component | OpenSearch Replacement | Reason |
-|---------------|----------------------|--------|
-| ElasticSearch | OpenSearch | Free DLS, open source |
-| Kibana | OpenSearch Dashboards | Compatible UI |
-| APM Server | Jaeger | Open source, OTLP support |
-| Elastic APM Agent | OpenTelemetry Mule 4 Agent | Vendor-neutral tracing |
-
-**Key Benefits:**
-- **Document-Level Security (DLS)**: FREE with OpenSearch (was paid X-Pack feature)
-- **Open Source**: No licensing concerns
-- **OpenTelemetry**: Vendor-neutral observability standard
-- **Jaeger**: Native OpenSearch integration for trace storage

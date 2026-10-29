@@ -1,34 +1,56 @@
-# Docker Compose Configuration for OpenSearch Stack + APISIX Gateway
+# Mule platform: APISIX gateway, Runtime Manager (Mule worker pools), OpenSearch + Dashboards + Fluent Bit (logs),
+# Jaeger v2 (traces), Prometheus/Grafana/Alertmanager, Keycloak (single sign-on), MySQL, ActiveMQ.
 #
-# OPENSEARCH MIGRATION - Proof of Concept
-# This configuration replaces:
-#   - ElasticSearch → OpenSearch (with FREE Document-Level Security)
-#   - Kibana → OpenSearch Dashboards
-#   - APM Server → Jaeger + Data Prepper (for OpenTelemetry traces)
-#
-# For production deployments with SSL/TLS, use the SSL override:
-#   docker-compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+# HTTPS on 9443 is always on once certs exist (config/scripts/setup/generate-certs.sh).
 #
 
-version: '3.8'
+# Fixed project name so volume names (dockerelasticsearch_opensearch-data, ...) don't
+# depend on the folder this repo is cloned into. Kept as-is to reuse existing data.
+name: dockerelasticsearch
+
+# One `docker compose up -d` starts this stack + the Mule platform (mule/docker-compose.yml,
+# paths relative to mule/). Everything is configured in this folder's .env.
+#
+# Parts are compose profiles, picked with COMPOSE_PROFILES in .env (or `--profile x`).
+# Always on (no profile): apisix + the Runtime Manager, which runs the Mule workers (runtime pools).
+#   db          MySQL                      mq       ActiveMQ
+#   logging     OpenSearch, Dashboards, Fluent Bit
+#   tracing     Jaeger (+ OpenSearch as its storage)
+#   monitoring  Prometheus, Grafana        alerting Alertmanager (+ Prometheus)
+#   auth        Keycloak (+ its Postgres). Without it set GATEWAY_AUTH=off, or /api/* rejects every call.
+#   opensearch-monitoring  OpenSearch exporter
+# `docker compose build` / image export only touch the active profiles.
+include:
+  - path: mule/docker-compose.yml
+    env_file: .env   # one .env for everything (default would be mule/.env)
 
 services:
   #
-  # OpenSearch - Search and Analytics Engine (replaces ElasticSearch)
+  # OpenSearch - logs and trace storage
   # Includes FREE Document-Level Security for multi-tenancy
   #
   opensearch:
-    image: opensearchproject/opensearch:${OPENSEARCH_VERSION:-2.11.1}
+    profiles: [logging, tracing, opensearch-monitoring]
+    image: opensearchproject/opensearch:${OPENSEARCH_VERSION:-2.19.7}
     container_name: opensearch
     environment:
       - node.name=${NODE_NAME:-opensearch}
       - cluster.name=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
       - discovery.type=${DISCOVERY_TYPE:-single-node}
       - bootstrap.memory_lock=true
-      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
-      # Security plugin with demo certificates (enables DLS)
-      # Demo mode generates self-signed certs automatically
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
+      # 512m is plenty for a dev/test volume of logs and spans; raise it (and the host RAM) for production
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      # Performance Analyzer runs a second JVM (~170 MB) nobody reads here
+      - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
+      # admin password, applied when the security index is first created (2.12+; wipe opensearch-data to change it)
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_HOST=localhost:9200
+      # no demo config (public certs, users with published passwords): scripts/opensearch-start.sh sets up security
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    # index templates + tenant roles: setup-opensearch.sh runs in the background once the cluster answers
+    # (idempotent, every start), so there is no separate one-shot setup container
+    entrypoint: ["bash", "/usr/share/opensearch/opensearch-start.sh"]
     ulimits:
       memlock:
         soft: -1
@@ -38,7 +60,8 @@ services:
         hard: 65536
     volumes:
       - opensearch-data:/usr/share/opensearch/data
-      - opensearch-backups:${SNAPSHOT_REPOSITORY_PATH:-/mnt/opensearch-backups}
+      - ./scripts/setup-opensearch.sh:/usr/share/opensearch/setup-opensearch.sh:ro
+      - ./scripts/opensearch-start.sh:/usr/share/opensearch/opensearch-start.sh:ro
     # Ports removed - access via APISIX gateway at /opensearch
     expose:
       - "9200"
@@ -49,28 +72,32 @@ services:
         ipv4_address: 172.42.0.10
       ce-base-network:
     healthcheck:
-      # Demo mode uses admin/admin as default credentials
-      test: ["CMD-SHELL", "curl -f -k -u admin:admin https://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f -k -u \"admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD\" https://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10
       start_period: 60s
+    restart: always   # back after a Docker/host restart (Jaeger, Fluent Bit, Dashboards need it)
 
   #
-  # OpenSearch Dashboards - Visualization (replaces Kibana)
+  # OpenSearch Dashboards - log search (Keycloak sign-in)
   #
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-2.11.1}
+    profiles: [logging]
+    image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-2.19.7}
     container_name: opensearch-dashboards
     environment:
       - OPENSEARCH_HOSTS=["https://opensearch:9200"]
       - SERVER_BASEPATH=/dashboards
       - SERVER_REWRITEBASEPATH=true
-      # Security settings (demo mode uses admin/admin)
       - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=admin
-      # Accept self-signed certs from OpenSearch demo mode
-      - opensearch.ssl.verificationMode=none
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      # read by the mounted opensearch_dashboards.yml (sign-in with Keycloak, client dashboards)
+      - DASHBOARDS_OIDC_CLIENT_SECRET=${DASHBOARDS_OIDC_CLIENT_SECRET}
+      - DASHBOARDS_COOKIE_SECRET=${DASHBOARDS_COOKIE_SECRET}
+    volumes:
+      # dashboards-on.yml = Keycloak sign-in, dashboards-off.yml = OpenSearch user/password (GATEWAY_AUTH=off)
+      - ./config/opensearch-dashboards/dashboards-${GATEWAY_AUTH:-on}.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
     expose:
       - "5601"
     networks:
@@ -80,6 +107,9 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
+      keycloak:   # the openid sign-in reads Keycloak's discovery document at startup
+        condition: service_healthy
+        required: false
     healthcheck:
       # OpenSearch Dashboards doesn't have /api/status, use root path
       test: ["CMD-SHELL", "curl -f http://localhost:5601/dashboards/ || exit 1"]
@@ -87,88 +117,59 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+    restart: always   # back after a Docker/host restart (Jaeger, Fluent Bit, Dashboards need it)
 
   #
-  # Logstash - Log Processing Pipeline (with OpenSearch output)
-  # Uses logstash-oss-with-opensearch-output-plugin image
+  # Fluent Bit - log ingestion
+  # JSON events on TCP/UDP 5000 (Mule log4j Socket appender) -> OpenSearch mule-logs-* / logstash-*.
+  # Events need auth_token = LOG_INGEST_TOKEN. Reached as log-ingest:5000 inside the network and through
+  # APISIX's stream proxy on localhost:9100 from outside (CloudHub).
   #
-  logstash:
-    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:${LOGSTASH_VERSION:-8.9.0}
-    container_name: logstash
+  fluent-bit:
+    profiles: [logging]
+    build: ./config/fluent-bit
+    image: ce-fluent-bit:5.1.4
+    container_name: fluent-bit
     environment:
-      - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms1g -Xmx1g}
-      - OPENSEARCH_HOSTS=https://opensearch:9200
-      - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=admin
-      - LOGSTASH_AUTH_TOKEN=${LOGSTASH_AUTH_TOKEN}
-    volumes:
-      - ./config/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
-      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
-    # All Logstash access is now routed through APISIX gateway for load balancing support
-    # External access via APISIX:
-    #   - TCP log ingestion: localhost:9100 (APISIX) -> logstash:5000
-    #   - Beats input: localhost:9144 (APISIX) -> logstash:5044
-    #   - Monitoring API: http://localhost:9080/logstash (APISIX) -> logstash:9600
+      - LOG_INGEST_TOKEN=${LOG_INGEST_TOKEN}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
     expose:
-      - "5000"           # TCP/UDP input (internal, via APISIX stream proxy)
-      - "5044"           # Beats input (internal, via APISIX stream proxy)
-      - "9600"           # Monitoring API (internal, via APISIX HTTP route)
+      - "5000"           # TCP/UDP JSON input (via APISIX stream proxy :9100 from outside)
+      - "2020"           # health + Prometheus metrics (/api/v1/metrics/prometheus)
     networks:
       ce-base-micronet:
         ipv4_address: 172.42.0.11
+        aliases: [log-ingest]
       ce-base-network:
+        aliases: [log-ingest]
     depends_on:
       opensearch:
         condition: service_healthy
+    restart: always
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9600 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  opensearch-setup:
-    image: curlimages/curl:latest
-    container_name: opensearch-setup
-    volumes:
-      - ./scripts/setup-opensearch.sh:/setup-opensearch.sh:ro
-    networks:
-      - ce-base-micronet
-      - ce-base-network
-    depends_on:
-      opensearch-dashboards:
-        condition: service_healthy
-    command: sh /setup-opensearch.sh
-    restart: on-failure
+      test: ["CMD", "/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2020/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   #
-  # Jaeger All-in-One - Distributed Tracing (replaces APM Server)
-  # Receives traces via OTLP from OpenTelemetry Mule 4 Agent
-  # Stores traces in OpenSearch
+  # Jaeger v2 - Distributed Tracing: OTLP from the OpenTelemetry Mule 4 agent, spans stored in OpenSearch.
+  # Configured by config/jaeger/config.yaml (v2 has no SPAN_STORAGE_TYPE/ES_* env vars).
   #
   jaeger:
-    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.52}
+    profiles: [tracing]
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.22.0}
     container_name: jaeger
+    command: ["--config", "/etc/jaeger/config.yaml"]
     environment:
-      # OpenSearch storage backend (demo mode uses admin/admin)
-      - SPAN_STORAGE_TYPE=opensearch
-      - ES_SERVER_URLS=https://opensearch:9200
-      - ES_USERNAME=admin
-      - ES_PASSWORD=admin
-      - ES_TLS_ENABLED=true
-      - ES_TLS_SKIP_HOST_VERIFY=true
-      # OTLP receiver for OpenTelemetry traces
-      - COLLECTOR_OTLP_ENABLED=true
-      # Jaeger Query settings
-      - QUERY_BASE_PATH=/jaeger
-    ports:
-      - "16686:16686"    # Jaeger UI (also via APISIX at /jaeger)
-      - "4317:4317"      # OTLP gRPC receiver (for OTel agent)
-      - "4318:4318"      # OTLP HTTP receiver (for OTel agent)
-      - "14250:14250"    # Jaeger gRPC receiver
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}   # read by config.yaml (${env:OPENSEARCH_PASSWORD})
+    volumes:
+      - ./config/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
     expose:
-      - "6831/udp"       # Jaeger thrift compact
-      - "6832/udp"       # Jaeger thrift binary
-      - "14268"          # Jaeger HTTP receiver
+      - "16686"          # Jaeger UI/API (via APISIX /jaeger only)
+      - "4317"           # OTLP gRPC (Mule workers, inside the network only)
+      - "4318"           # OTLP HTTP (from outside only via APISIX /otlp, token-checked)
+      - "8888"           # own metrics (Prometheus)
     networks:
       ce-base-micronet:
         ipv4_address: 172.42.0.13
@@ -177,123 +178,71 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:16686/ || exit 1"]
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:13133/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
     restart: always
 
   #
-  # Apache APISIX - API Gateway and Load Balancer
+  # Apache APISIX - API Gateway (standalone mode: config/apisix/apisix.yaml is the only route source)
+  # start.sh renders routes + certs/apisix into the live config and hot-reloads on change.
+  # No depends_on: upstreams are resolved per request, so the gateway comes up even if a backend is down.
   #
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.9
-    container_name: etcd
-    environment:
-      - ETCD_NAME=etcd
-      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
-      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
-      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
-      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
-      - ETCD_INITIAL_CLUSTER=etcd=http://etcd:2380
-    ports:
-      - "2379:2379"
-    networks:
-      ce-base-micronet:
-        ipv4_address: 172.42.0.21
-      ce-base-network:
-    healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
-
   apisix:
-    image: apache/apisix:3.7.0-debian
+    image: apache/apisix:3.19.0-debian
     container_name: apisix
+    entrypoint: ["/bin/sh", "/apisix-src/start.sh"]
     environment:
-      - APISIX_ADMIN_KEY=${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
+      # off = strip openid-connect from the routes (lite installs without the `auth` profile)
+      - GATEWAY_AUTH=${GATEWAY_AUTH:-on}
+      # key of the /otlp route (CloudHub traces); start.sh renders it into the route config
+      - OTLP_INGEST_TOKEN=${OTLP_INGEST_TOKEN:-}
+      - MULE_GATEWAY_CLIENT_SECRET=${MULE_GATEWAY_CLIENT_SECRET}
+      # single sign-on of the home page and /jaeger, /prometheus, /activemq (Keycloak client gateway-sso)
+      - GATEWAY_SSO_CLIENT_SECRET=${GATEWAY_SSO_CLIENT_SECRET}
+      - GATEWAY_SESSION_SECRET=${GATEWAY_SESSION_SECRET}
+      # /activemq signs in to the console for the user (its own login stays for direct access)
+      - ACTIVEMQ_ADMIN_PASSWORD=${ACTIVEMQ_ADMIN_PASSWORD:-}
+      # basic-auth password (user ops) of /jaeger, /prometheus, /activemq when GATEWAY_AUTH=off (no Keycloak)
+      - GATEWAY_OPS_PASSWORD=${GATEWAY_OPS_PASSWORD}
+      # extra names/IPs for the generated gateway certificate (worker nodes reach the platform at one of them)
+      - GATEWAY_HOSTNAMES=${GATEWAY_HOSTNAMES:-}
     volumes:
       - ./config/apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./config/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./config/apisix:/apisix-src:ro
+      # read-write: on first start start.sh creates certs/ca + certs/apisix if they don't exist
+      - ./certs:/certs
       - apisix-logs:/usr/local/apisix/logs
     ports:
-      - "9080:9080"    # HTTP Gateway
-      - "9443:9443"    # HTTPS Gateway
-      - "9180:9180"    # Admin API
-      - "9091:9091"    # Prometheus Metrics
-      - "9092:9092"    # Control API
-      - "9100:9100/tcp"  # Stream proxy: Logstash TCP input (routes to logstash:5000)
-      - "9144:9144/tcp"  # Stream proxy: Logstash Beats input (routes to logstash:5044)
+      - "127.0.0.1:9080:9080"    # HTTP Gateway: cleartext, host only (remote clients use 9443)
+      - "9443:9443"    # HTTPS Gateway (cert from certs/apisix; created on first start if missing)
+      - "127.0.0.1:9091:9091"    # Prometheus Metrics (no auth: host only)
+      - "9100:9100/tcp"  # Stream proxy: log ingestion (fluent-bit:5000; CloudHub log4j Socket appender)
     networks:
       ce-base-micronet:
         ipv4_address: 172.42.0.20
       ce-base-network:
-    depends_on:
-      etcd:
-        condition: service_healthy
-      opensearch:
-        condition: service_healthy
-      opensearch-dashboards:
-        condition: service_healthy
-      logstash:
-        condition: service_healthy
-      jaeger:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -d /usr/local/apisix || exit 1"]
+      # Control API answers only once APISIX workers are running with a loaded config.
+      # The image has no curl/wget, so speak HTTP over bash's /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9092 && printf 'GET /v1/schema HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 10s
+      retries: 6
+      start_period: 15s
     restart: always
-
-  apisix-dashboard:
-    image: apache/apisix-dashboard:3.0.1-alpine
-    container_name: apisix-dashboard
-    volumes:
-      - ./config/apisix-dashboard/conf.yaml:/usr/local/apisix-dashboard/conf/conf.yaml:ro
-    # Dashboard accessible via APISIX at http://localhost:9080/ (root path)
-    # Port exposure not needed - all access through APISIX gateway
-    expose:
-      - "9000"
-    networks:
-      ce-base-micronet:
-        ipv4_address: 172.42.0.22
-      ce-base-network:
-    depends_on:
-      etcd:
-        condition: service_healthy
-      apisix:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
-
-  apisix-setup:
-    image: curlimages/curl:latest
-    container_name: apisix-setup
-    volumes:
-      - ./scripts/setup-apisix.sh:/setup-apisix.sh:ro
-    networks:
-      - ce-base-micronet
-      - ce-base-network
-    depends_on:
-      apisix:
-        condition: service_healthy
-    command: sh /setup-apisix.sh
-    restart: on-failure
 
   #
   # Prometheus - Metrics Collection and Storage
   #
   prometheus:
-    image: prom/prometheus:v2.48.0
+    profiles: [monitoring, alerting]
+    image: prom/prometheus:v3.15.1
     container_name: prometheus
+    environment:   # external_labels in prometheus.yml
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - OPENSEARCH_CLUSTER_NAME=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./config/prometheus/rules:/etc/prometheus/rules:ro
@@ -302,8 +251,10 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
+      # served under /prometheus by APISIX (prefix stripped): routes stay at /, the UI's links and redirects get the prefix
+      - '--web.external-url=https://localhost:9443/prometheus/'
+      - '--web.route-prefix=/'
+      - '--enable-feature=expand-external-labels'
     # Prometheus accessible via APISIX at /prometheus
     expose:
       - "9090"
@@ -311,9 +262,6 @@ services:
       ce-base-micronet:
         ipv4_address: 172.42.0.23
       ce-base-network:
-    depends_on:
-      apisix:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
@@ -325,21 +273,37 @@ services:
   # Grafana - Metrics Visualization and Dashboards
   #
   grafana:
-    image: grafana/grafana:10.2.2
+    profiles: [monitoring]
+    image: grafana/grafana:12.4.13
     container_name: grafana
     environment:
-      - GF_SERVER_ROOT_URL=http://localhost:9080/grafana
+      - GF_SERVER_ROOT_URL=https://localhost:9443/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-grafana-admin}   # not "admin": that name signs in from Keycloak
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=
-      - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_SECURITY_COOKIE_SAMESITE=none
-      - GF_SECURITY_COOKIE_SECURE=false
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=false
+      - GF_SECURITY_COOKIE_SAMESITE=lax   # lax: the OAuth state cookie must survive Keycloak's redirect back
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false   # viewers can query Prometheus through datasource proxy
+      # single sign-on with Keycloak (client grafana); GATEWAY_AUTH=off turns it off (Grafana reads on/off as bools).
+      # Realm role admin = Grafana Admin, anyone else is refused. The local admin login stays at /grafana/login?disableAutoLogin
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=${GATEWAY_AUTH:-on}
+      - GF_AUTH_OAUTH_AUTO_LOGIN=${GATEWAY_AUTH:-on}
+      - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://localhost:9443/auth/realms/mule/protocol/openid-connect/auth
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=http://keycloak:8080/auth/realms/mule/protocol/openid-connect/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=http://keycloak:8080/auth/realms/mule/protocol/openid-connect/userinfo
+      - GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH=preferred_username
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(roles[*], 'admin') && 'Admin'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=true
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://localhost:9443/auth/realms/mule/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=https%3A%2F%2Flocalhost%3A9443%2F
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
@@ -362,13 +326,11 @@ services:
 
   #
   # Alertmanager - Alert Notification Manager
-  # Enabled when ALERTING_ENABLED=true in .env
   #
   alertmanager:
-    image: prom/alertmanager:v0.26.0
+    image: prom/alertmanager:v0.34.1
     container_name: alertmanager
-    profiles:
-      - alerting
+    profiles: [alerting]
     volumes:
       - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
@@ -376,8 +338,9 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
       - '--data.retention=${ALERTMANAGER_RETENTION:-120h}'
-      - '--web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://localhost:9080/alertmanager}'
-    # Alertmanager accessible via APISIX at /alertmanager
+      # public URL (links in notifications); its path is also the route prefix: APISIX /alertmanager, Prometheus path_prefix
+      - '--web.external-url=${ALERTMANAGER_EXTERNAL_URL:-https://localhost:9443/alertmanager}'
+    # Alertmanager accessible via APISIX at /alertmanager (admin SSO)
     expose:
       - "9093"
     networks:
@@ -388,7 +351,7 @@ services:
       prometheus:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/alertmanager/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -396,26 +359,25 @@ services:
 
   #
   # OpenSearch Exporter - Exports OpenSearch metrics to Prometheus
-  # Enabled when OPENSEARCH_EXPORTER_ENABLED=true in .env
   # Uses the same elasticsearch-exporter as it's compatible with OpenSearch
   #
   opensearch-exporter:
-    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.6.0
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.11.0
     container_name: opensearch-exporter
-    profiles:
-      - opensearch-monitoring
+    profiles: [opensearch-monitoring]
     command:
-      - '--es.uri=http://opensearch:9200'
+      - '--es.uri=https://opensearch:9200'
+      - '--es.ssl-skip-verify'
       - '--es.all'
       - '--es.indices'
       - '--es.indices_settings'
       - '--es.shards'
-      - '--es.snapshots'
-      - '--es.cluster_settings'
+      - '--collector.snapshots'
+      - '--collector.clustersettings'
       - '--es.timeout=30s'
     environment:
       - ES_USERNAME=admin
-      - ES_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-AdminPass123!}
+      - ES_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
     expose:
       - "9114"
     networks:
@@ -436,28 +398,50 @@ services:
   # Keycloak - Identity and Access Management
   #
   keycloak:
-    image: quay.io/keycloak/keycloak:23.0
+    profiles: [auth]
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: keycloak
     environment:
-      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN_USER:-admin}
-      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # master realm admin, created when the DB is empty (Keycloak flags it "temporary": fine on 9080-only master)
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USER:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak
       - KC_DB_USERNAME=keycloak
-      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
-      - KC_HOSTNAME=localhost
-      - KC_HOSTNAME_PORT=9443
-      - KC_HOSTNAME_STRICT=false
-      - KC_HOSTNAME_STRICT_HTTPS=false
-      - KC_HOSTNAME_ADMIN_URL=https://localhost:9443/auth
+      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env}
+      # public (browser) URL and issuer, the same whether a request comes through APISIX or straight to keycloak:8080
+      # (otherwise internal clients get http:// login URLs and a different issuer); backchannel-dynamic keeps the
+      # token/jwks URLs of internal callers (APISIX, Grafana, Dashboards, RM) on keycloak:8080
+      - KC_HOSTNAME=https://localhost:9443/auth
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
       - KC_HTTP_ENABLED=true
-      - KC_PROXY_ADDRESS_FORWARDING=true
-      - KC_PROXY=edge
-      - KC_HEALTH_ENABLED=true
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HEALTH_ENABLED=true   # /auth/health/ready on the management port 9000
+      - KC_CACHE=local   # single node: no cluster discovery
       - KC_HTTP_RELATIVE_PATH=/auth
+      # realm import fills ${RM_OIDC_CLIENT_SECRET} in mule-realm.json (runtime-manager client)
+      - RM_OIDC_CLIENT_SECRET=${RM_OIDC_CLIENT_SECRET:-}
+      # and the seeded realm users / APISIX gateway client
+      - KEYCLOAK_REALM_ADMIN_PASSWORD=${KEYCLOAK_REALM_ADMIN_PASSWORD}
+      - KEYCLOAK_REALM_DEV_PASSWORD=${KEYCLOAK_REALM_DEV_PASSWORD}
+      - MULE_GATEWAY_CLIENT_SECRET=${MULE_GATEWAY_CLIENT_SECRET}
+      - DASHBOARDS_OIDC_CLIENT_SECRET=${DASHBOARDS_OIDC_CLIENT_SECRET}
+      - GATEWAY_SSO_CLIENT_SECRET=${GATEWAY_SSO_CLIENT_SECRET}
+      - GRAFANA_OIDC_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
+    # production mode (not start-dev); it builds its optimized config on first start, so startup takes longer.
+    # The master realm (server admin) is served on 9080 only (APISIX answers 404 on 9443), so once Keycloak answers it
+    # gets frontend URL http://localhost:9080/auth (its console signs in there, not on 9443), sslRequired none (9080 is
+    # plain HTTP and Docker's 172.42.x is not a "private" range to Keycloak) and brute-force protection.
+    # Keycloak stays PID 1 (exec); the background step gives up after ~5 min (e.g. the admin password was changed).
+    entrypoint: ["bash", "-c"]
     command:
-      - start-dev
-      - --import-realm
+      - |
+        (k=/opt/keycloak/bin/kcadm.sh
+         for i in $$(seq 60); do
+           $$k config credentials --server http://localhost:8080/auth --realm master --user "$$KC_BOOTSTRAP_ADMIN_USERNAME"              --password "$$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null 2>&1              && $$k update realms/master -s attributes.frontendUrl=http://localhost:9080/auth -s sslRequired=NONE -s bruteForceProtected=true -s failureFactor=10 && break
+           sleep 5
+         done) &
+        exec /opt/keycloak/bin/kc.sh start --import-realm
     volumes:
       - ./config/keycloak/realms:/opt/keycloak/data/import:ro
       - keycloak-data:/opt/keycloak/data
@@ -472,7 +456,7 @@ services:
       keycloak-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e 'GET /health/ready HTTP/1.1\r\nhost: http://localhost\r\nConnection: close\r\n\r\n' >&3;if [ $? -eq 0 ]; then echo 'Healthcheck Successful';exit 0;else echo 'Healthcheck Failed';exit 1;fi;"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -483,12 +467,13 @@ services:
   # Keycloak Database - PostgreSQL
   #
   keycloak-db:
-    image: postgres:15-alpine
+    profiles: [auth]
+    image: postgres:15.19-alpine
     container_name: keycloak-db
     environment:
       - POSTGRES_DB=keycloak
       - POSTGRES_USER=keycloak
-      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak}
+      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env}
     volumes:
       - keycloak-db-data:/var/lib/postgresql/data
     networks:
@@ -505,8 +490,6 @@ services:
 volumes:
   opensearch-data:
     driver: local
-  opensearch-backups:
-    driver: local
   apisix-logs:
     driver: local
   prometheus-data:
@@ -520,8 +503,16 @@ volumes:
   keycloak-db-data:
     driver: local
 
+# Created by compose (no manual `docker network create`). Must stay IDENTICAL to the
+# networks block in the included Mule compose file.
 networks:
   ce-base-micronet:
-    external: true
+    name: ce-base-micronet
+    ipam:
+      config:
+        - subnet: 172.42.0.0/16
+          # containers without a fixed address (the Mule pool workers) get one from the upper half, so a worker
+          # started first can never take a service's fixed 172.42.0.x address (MySQL's .3 after a Docker restart)
+          ip_range: 172.42.128.0/17
   ce-base-network:
-    external: true
+    name: ce-base-network

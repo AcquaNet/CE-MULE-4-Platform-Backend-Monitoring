@@ -11,7 +11,7 @@
 #   - certbot installed (or use Docker certbot)
 #
 # Usage:
-#   ./scripts/setup-letsencrypt.sh --domain example.com --email admin@example.com
+#   ./config/scripts/setup/setup-letsencrypt.sh --domain example.com --email admin@example.com
 #
 # Options:
 #   --domain DOMAIN      Domain name for certificate (required)
@@ -33,7 +33,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/setup/
 CERTS_DIR="$PROJECT_ROOT/certs"
 LETSENCRYPT_DIR="$PROJECT_ROOT/letsencrypt"
 
@@ -149,7 +149,7 @@ if [ "$STANDALONE" = true ]; then
     # Check if APISIX is running on port 80
     if docker ps --filter "name=apisix" --format "{{.Names}}" | grep -q apisix; then
         echo -e "${YELLOW}APISIX is running. Stopping temporarily...${NC}"
-        docker-compose -f "$PROJECT_ROOT/docker-compose.yml" stop apisix
+        docker compose -f "$PROJECT_ROOT/docker-compose.yml" stop apisix
         RESTART_APISIX=true
     fi
 
@@ -215,7 +215,7 @@ fi
 if [ "${RESTART_APISIX:-false}" = true ]; then
     echo ""
     echo -e "${GREEN}Restarting APISIX...${NC}"
-    docker-compose -f "$PROJECT_ROOT/docker-compose.yml" start apisix
+    docker compose -f "$PROJECT_ROOT/docker-compose.yml" start apisix
     echo -e "${GREEN}✓ APISIX restarted${NC}"
 fi
 
@@ -226,7 +226,7 @@ echo ""
 # Copy certificates to certs directory
 echo -e "${GREEN}Copying certificates to certs directory...${NC}"
 
-mkdir -p "$CERTS_DIR"/{apisix,opensearch,dashboards,logstash}
+mkdir -p "$CERTS_DIR/apisix"   # only APISIX terminates TLS for clients
 
 if [ "$USE_DOCKER" = true ]; then
     CERT_PATH="$LETSENCRYPT_DIR/config/live/$DOMAIN"
@@ -246,17 +246,8 @@ else
     sudo chown -R $(whoami):$(whoami) "$CERTS_DIR/apisix"
 fi
 
-# Copy for other services (they can use the same cert)
-cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/opensearch/opensearch.crt"
-cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/opensearch/opensearch.key"
-cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/dashboards/dashboards.crt"
-cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/dashboards/dashboards.key"
-cp "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/logstash/logstash.crt"
-cp "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/logstash/logstash.key"
-
-# Set permissions
-chmod 644 "$CERTS_DIR"/*/*.crt
-chmod 600 "$CERTS_DIR"/*/*.key
+# 644 for the key too: APISIX runs as a non-root user and must read it
+chmod 644 "$CERTS_DIR/apisix/apisix.crt" "$CERTS_DIR/apisix/apisix.key" "$CERTS_DIR/apisix/ca.crt"
 
 echo -e "${GREEN}✓ Certificates copied${NC}"
 echo ""
@@ -270,8 +261,8 @@ cat > "$PROJECT_ROOT/scripts/renew-letsencrypt.sh" <<'RENEWAL_SCRIPT'
 # This script should be run via cron to automatically renew certificates
 # before they expire (Let's Encrypt certificates expire after 90 days).
 #
-# Recommended cron schedule (runs daily at 3 AM):
-#   0 3 * * * /path/to/scripts/renew-letsencrypt.sh >> /var/log/letsencrypt-renewal.log 2>&1
+# Recommended cron schedule (runs daily at 3 AM): add the exact crontab line
+# printed at the end of config/scripts/setup/setup-letsencrypt.sh.
 #
 
 set -e
@@ -291,11 +282,14 @@ if [ -d "$LETSENCRYPT_DIR/config" ]; then
         -v "$LETSENCRYPT_DIR/work:/var/lib/letsencrypt" \
         -v "$LETSENCRYPT_DIR/logs:/var/log/letsencrypt" \
         -v "$LETSENCRYPT_DIR/webroot:/webroot" \
-        certbot/certbot renew --quiet --deploy-hook "/scripts/copy-certs.sh"
+        certbot/certbot renew --quiet
 else
     # System certbot
-    sudo certbot renew --quiet --deploy-hook "/path/to/scripts/copy-certs.sh"
+    sudo certbot renew --quiet
 fi
+
+# Copy (possibly renewed) certs into certs/; APISIX picks them up automatically
+"$SCRIPT_DIR/copy-certs.sh"
 
 echo "$(date): Certificate renewal check complete"
 RENEWAL_SCRIPT
@@ -321,18 +315,14 @@ else
     CERT_PATH="/etc/letsencrypt/live/$DOMAIN"
 fi
 
-# Copy to all service directories
-for service in apisix opensearch dashboards logstash; do
-    cp "\$CERT_PATH/fullchain.pem" "\$CERTS_DIR/\$service/\${service}.crt"
-    cp "\$CERT_PATH/privkey.pem" "\$CERTS_DIR/\$service/\${service}.key"
-    chmod 644 "\$CERTS_DIR/\$service/\${service}.crt"
-    chmod 600 "\$CERTS_DIR/\$service/\${service}.key"
-done
+# APISIX only; 644 for the key too: APISIX runs as a non-root user
+mkdir -p "\$CERTS_DIR/apisix"
+cp "\$CERT_PATH/fullchain.pem" "\$CERTS_DIR/apisix/apisix.crt"
+cp "\$CERT_PATH/privkey.pem" "\$CERTS_DIR/apisix/apisix.key"
+chmod 644 "\$CERTS_DIR/apisix/apisix.crt" "\$CERTS_DIR/apisix/apisix.key"
 
-# Reload APISIX to pick up new certificates
-docker-compose -f "\$PROJECT_ROOT/docker-compose.yml" exec apisix apisix reload || true
-
-echo "Certificates copied and APISIX reloaded"
+# No reload needed: APISIX (config/apisix/start.sh) re-renders within ~2s when certs/apisix changes
+echo "Certificates copied"
 COPY_SCRIPT
 
 chmod +x "$PROJECT_ROOT/scripts/copy-certs.sh"
@@ -354,21 +344,14 @@ echo "  Expires: In 90 days (auto-renewal configured)"
 echo ""
 echo -e "${YELLOW}Certificates Installed:${NC}"
 echo "  APISIX: $CERTS_DIR/apisix/"
-echo "  OpenSearch: $CERTS_DIR/opensearch/"
-echo "  OpenSearch Dashboards: $CERTS_DIR/dashboards/"
-echo "  Logstash: $CERTS_DIR/logstash/"
 echo ""
 echo -e "${YELLOW}Next Steps:${NC}"
 echo ""
-echo "  1. Enable SSL/TLS in .env file:"
-echo "     ${BLUE}SSL_ENABLED=true${NC}"
-echo "     ${BLUE}SSL_DOMAIN=$DOMAIN${NC}"
+echo "  1. Nothing to enable: APISIX serves HTTPS on 9443 from certs/apisix and picks up"
+echo "     the new certificate within ~2s. Not running yet? ${BLUE}docker compose up -d${NC}"
 echo ""
-echo "  2. Restart services with SSL profile:"
-echo "     ${BLUE}docker-compose --profile ssl up -d${NC}"
-echo ""
-echo "  3. Verify HTTPS access:"
-echo "     ${BLUE}curl https://$DOMAIN:9443/opensearch/_cluster/health${NC}"
+echo "  2. Verify HTTPS access:"
+echo -e "     ${BLUE}curl -I https://$DOMAIN:9443/runtime-manager/${NC}"
 echo ""
 echo -e "${YELLOW}Automatic Renewal:${NC}"
 echo ""

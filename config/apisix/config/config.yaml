@@ -19,44 +19,37 @@
 
 apisix:
   node_listen: 9080              # HTTP port
+  # stream (TCP) proxy only runs with this; without it stream_proxy/stream_routes are silently ignored
+  proxy_mode: http&stream
   enable_ipv6: false
 
-  # Stream proxy for TCP traffic (Logstash, future services)
+  # Stream proxy for TCP traffic (log ingestion)
   # Note: UDP support can be added via stream routes
   stream_proxy:
     tcp:
-      - addr: 9100              # TCP port for Logstash log ingestion (maps to 5000)
-      - addr: 9144              # TCP port for Logstash Beats (maps to 5044)
+      - addr: 9100              # TCP log ingestion (Fluent Bit :5000)
 
-  enable_control: true
+  # HTTPS on 9443 (APISIX default listener). Served whenever certs/apisix exists;
+  # the cert is injected into apisix.yaml by config/apisix/start.sh.
+  enable_http2: true              # all TLS listeners (3.9+: no per-port enable_http2)
+  ssl:
+    enable: true
+    listen:
+      - port: 9443
+    ssl_protocols: "TLSv1.2 TLSv1.3"
+    fallback_sni: "localhost"     # any hostname/IP without its own cert gets the default one
+
+  enable_control: true            # also used by the container healthcheck
+  extra_lua_path: "/apisix-src/lua/?.lua"   # lua/apisix/control/v1.lua: fixes the Control API dump 500s
   control:
-    ip: "0.0.0.0"
+    ip: "127.0.0.1"               # no auth, dumps the rendered config (secrets); no curl in the image: docker run --rm --network container:apisix curlimages/curl:8.10.1 -s http://127.0.0.1:9092/v1/healthcheck
     port: 9092
 
+# Standalone mode: routes come only from conf/apisix.yaml (no etcd, no Admin API).
 deployment:
   role: data_plane
   role_data_plane:
     config_provider: yaml
-
-  admin:
-    admin_key:
-      - name: "admin"
-        key: ${APISIX_ADMIN_KEY}  # Loaded from environment variable
-        role: admin
-
-    enable_admin_cors: true
-    allow_admin:
-      - 0.0.0.0/0                # Allow all IPs for development (restrict in production)
-
-    admin_listen:
-      ip: 0.0.0.0
-      port: 9180
-
-  etcd:
-    host:
-      - "http://etcd:2379"       # etcd service name in Docker
-    prefix: "/apisix"
-    timeout: 30
 
 plugin_attr:
   prometheus:
@@ -65,6 +58,8 @@ plugin_attr:
       port: 9091
 
 nginx_config:
+  # default is one worker per CPU core (~36 MB each); 2 is plenty below thousands of req/s
+  worker_processes: 2
   error_log: "/usr/local/apisix/logs/error.log"
   error_log_level: "warn"
 
@@ -84,96 +79,27 @@ nginx_config:
     client_max_body_size: 50m
     client_body_buffer_size: 512k
 
-    # Disable SSL verification for HTTPS upstreams (required for self-signed certs)
-    proxy_ssl_verify: "off"
-
-  # Enable stream (TCP/UDP) proxy for Logstash and other services
+  # Enable stream (TCP/UDP) proxy (log ingestion)
   stream:
     enable_access_log: true
     access_log: "/usr/local/apisix/logs/stream-access.log"
     access_log_format: "$remote_addr [$time_local] $protocol $status $bytes_sent $bytes_received $session_time"
 
-plugins:
-  - real-ip
+plugins:   # only what apisix.yaml and the Runtime Manager's routes use: every enabled plugin is attack surface
   - client-control
-  - proxy-control
-  - request-id
-  - zipkin
-  - ext-plugin-pre-req
-  - fault-injection
   - mocking
   - serverless-pre-function
   - cors
-  - ip-restriction
-  - ua-restriction
-  - referer-restriction
-  - csrf
   - uri-blocker
-  - request-validation
   - openid-connect
-  - authz-casbin
-  - authz-casdoor
-  - wolf-rbac
-  - ldap-auth
-  - hmac-auth
   - basic-auth
-  - jwt-auth
   - key-auth
-  - consumer-restriction
-  - forward-auth
-  - opa
-  - authz-keycloak
-  - proxy-cache
-  - body-transformer
-  - proxy-mirror
   - proxy-rewrite
-  - workflow
-  - api-breaker
   - limit-conn
   - limit-count
-  - limit-req
-  - gzip
-  - server-info
-  - traffic-split
   - redirect
   - response-rewrite
-  - degraphql
-  - kafka-proxy
-  - grpc-transcode
-  - grpc-web
-  - public-api
   - prometheus
-  - datadog
-  - echo
-  - loggly
-  - http-logger
-  - splunk-hec-logging
-  - skywalking-logger
-  - google-cloud-logging
-  - sls-logger
-  - tcp-logger
-  - kafka-logger
-  - rocketmq-logger
-  - syslog
-  - udp-logger
-  - file-logger
-  - clickhouse-logger
-  - tencent-cloud-cls
-  - loki-logger
-  - opensearch-logger
-  - opentelemetry
-  - inspect
-  - example-plugin
-  - aws-lambda
-  - azure-functions
-  - openwhisk
-  - openfunction
   - serverless-post-function
-  - ext-plugin-post-req
-  - ext-plugin-post-resp
 
-stream_plugins:
-  - mqtt-proxy
-  - ip-restriction
-  - limit-conn
-  - syslog
+stream_plugins: []   # the 9100 stream route uses none

@@ -1,0 +1,1629 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Runtime Manager API",
+    "version": "1.0",
+    "description": "CloudHub-style management of Mule CE apps on runtime pools: deploy from Maven or a jar, set properties (plain and secure), manage pools (Mule version, Java, heap, JVM options, replicas), update checks and API tokens.\n\nAuthenticate with an API token (`Authorization: Bearer rm_...`, created under *API & settings*), the Basic RM_USER/RM_PASSWORD from `.env`, or a browser session. Errors are `{\"error\": \"...\"}` with 400 (bad input), 401 (not signed in), 403 (not allowed), 404 (unknown app/pool/token) or 500."
+  },
+  "servers": [
+    {
+      "url": "..",
+      "description": "Relative to this spec: the Runtime Manager root (https://localhost:9443/runtime-manager behind the gateway)"
+    }
+  ],
+  "security": [
+    {
+      "token": []
+    },
+    {
+      "basic": []
+    },
+    {
+      "session": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Apps",
+      "description": "Deploy, configure and observe applications. An app runs on every worker of its pool."
+    },
+    {
+      "name": "Properties",
+      "description": "Injected on deploy (Mule deployment properties), overriding the app's own. Secure values are encrypted at rest and never returned."
+    },
+    {
+      "name": "Pools",
+      "description": "Runtime pools: a Mule runtime (version, Java, heap, JVM options) run as N worker containers. Changes roll out one worker at a time."
+    },
+    {
+      "name": "Nodes",
+      "description": "Other servers that host pool workers (horizontal scaling). Each runs the node agent (node/install-node.sh), which prints the address, token and fingerprint to register here."
+    },
+    {
+      "name": "Settings",
+      "description": "Update-check interval and API tokens."
+    }
+  ],
+  "paths": {
+    "/api/me": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Who am I",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "The caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps": {
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "List apps",
+        "operationId": "listApps",
+        "description": "All apps with their pool, runtime, per-worker status, source, update state, route and property names.",
+        "responses": {
+          "200": {
+            "description": "Apps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{app}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        }
+      ],
+      "put": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Deploy or update an app",
+        "operationId": "deployApp",
+        "description": "One call for pipelines and the UI.\n\n* **JSON body**: Maven coordinates (resolved with the Maven settings), pool, update mode, route and properties. Fields left out keep their current value.\n* **Jar body** (`application/java-archive`): uploads the `...-mule-application.jar`; settings go in the query string. Uploaded apps have updates `off`.\n* **Empty JSON** with only `updates` or `route`: just saves them, no restart.\n\nThe app is redeployed (restarted) only when the jar, Maven source, pool or properties change, or `restart` is true.",
+        "parameters": [
+          {
+            "name": "pool",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "For jar uploads: runtime pool (default: current, else `default`)."
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "/orders"
+            },
+            "description": "For jar uploads: gateway route prefix (empty string removes the route)."
+          },
+          {
+            "name": "port",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 8081
+            },
+            "description": "For jar uploads: the app's HTTP listener port."
+          },
+          {
+            "name": "workers",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "2"
+            },
+            "description": "For jar uploads: `all`, a count (`2`) or worker names (`mule-default-1,mule-default-3`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployRequest"
+              },
+              "example": {
+                "pool": "default",
+                "group": "com.acqua",
+                "artifact": "orders-api",
+                "version": "1.4.2",
+                "updates": "notify",
+                "route": {
+                  "path": "/orders",
+                  "port": 8091
+                },
+                "properties": {
+                  "mule_env": "prod",
+                  "db.host": "mysql"
+                },
+                "secureProperties": {
+                  "db.password": "s3cret"
+                }
+              }
+            },
+            "application/java-archive": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deployed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployed"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-curl": "curl -fsS -X PUT $RM/api/apps/orders-api -H \"Authorization: Bearer $RM_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"pool\": \"default\", \"group\": \"com.acqua\", \"artifact\": \"orders-api\", \"version\": \"1.4.2\", \"secureProperties\": {\"db.password\": \"'\"$DB_PASSWORD\"'\"}}'\n\ncurl -fsS -X PUT \"$RM/api/apps/orders-api?pool=default&path=/orders&port=8091\" -H \"Authorization: Bearer $RM_TOKEN\" \\\n  -H \"Content-Type: application/java-archive\" --data-binary @target/orders-api-1.4.2-mule-application.jar"
+      },
+      "delete": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Delete an app",
+        "operationId": "deleteApp",
+        "description": "Undeploys it from every worker and removes its jar, properties, route and state.",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/apps/{app}/properties": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Properties"
+        ],
+        "summary": "Read properties",
+        "operationId": "getProperties",
+        "description": "Plain properties with values; secure properties by name only.",
+        "responses": {
+          "200": {
+            "description": "Properties",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Properties"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Properties"
+        ],
+        "summary": "Replace properties and restart",
+        "operationId": "putProperties",
+        "description": "Each map you send replaces that whole set (keys you leave out are removed). In `secureProperties` a `null` value keeps the stored secret. Restarts the app so Mule picks them up, unless `restart=0`.",
+        "parameters": [
+          {
+            "name": "restart",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "0"
+              ],
+              "default": "1"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropertiesUpdate"
+              },
+              "example": {
+                "properties": {
+                  "mule_env": "prod"
+                },
+                "secureProperties": {
+                  "db.password": null,
+                  "api.key": "new-value"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Properties"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/apps/{app}/restart": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Restart (redeploy) an app",
+        "operationId": "restartApp",
+        "responses": {
+          "200": {
+            "description": "Redeploy started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "restarted": {
+                      "type": "string"
+                    },
+                    "workers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/apps/{app}/check": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Check Maven for a newer build",
+        "operationId": "checkApp",
+        "description": "Moving versions (x-SNAPSHOT, RELEASE, LATEST) compare the resolved build; pinned versions look for a newer release. With updates `auto` a newer build is deployed right away; otherwise it is reported in `available`.",
+        "responses": {
+          "200": {
+            "description": "Result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/apps/{app}/overview": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        },
+        {
+          "name": "minutes",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 60
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Request stats and log problems",
+        "operationId": "overview",
+        "description": "Requests, error rate, latency percentiles, per-endpoint/worker/tenant stats and failed or slow requests from Jaeger traces (newest 1500 in the window); ERROR/WARN counts and latest messages from OpenSearch. Each part reports `state: ok | disabled | unreachable`.",
+        "responses": {
+          "200": {
+            "description": "Overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{app}/log": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/app"
+        },
+        {
+          "name": "worker",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "mule-default-1"
+          }
+        },
+        {
+          "name": "source",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "app",
+              "runtime"
+            ],
+            "default": "app"
+          },
+          "description": "`app`: the app's log file; `runtime`: Mule's mule.log (deployments)."
+        },
+        {
+          "name": "bytes",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "default": 65536,
+            "minimum": 1024,
+            "maximum": 8388608
+          },
+          "description": "How much of the end of the file to return (the UI's search reads 2 MB)."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Tail a log (last `bytes`, default 64 KB)",
+        "operationId": "appLog",
+        "responses": {
+          "200": {
+            "description": "Log text",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/pools": {
+      "get": {
+        "tags": [
+          "Pools"
+        ],
+        "summary": "List pools",
+        "operationId": "listPools",
+        "description": "Specs, rollout status, worker containers (state, health) and the apps on each pool.",
+        "responses": {
+          "200": {
+            "description": "Pools",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PoolInfo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pools/{pool}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/pool"
+        }
+      ],
+      "put": {
+        "tags": [
+          "Pools"
+        ],
+        "summary": "Create or change a pool",
+        "operationId": "putPool",
+        "description": "Saves the spec and rolls it out in the background: builds the `ce-mule-runtime:<mule>-java<java>` image if needed (a few minutes the first time), then replaces workers one at a time and redeploys their apps. Follow progress in `GET /api/pools`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PoolSpec"
+              },
+              "example": {
+                "mule_version": "4.12.0",
+                "java_version": "17",
+                "heap_mb": 1024,
+                "replicas": 2,
+                "jvm_options": [
+                  "-XX:+UseG1GC"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; rollout queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolSpec"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-curl": "curl -fsS -X PUT $RM/api/pools/edge -H \"Authorization: Bearer $RM_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"mule_version\": \"4.12.0\", \"java_version\": \"17\", \"heap_mb\": 1024, \"replicas\": 2}'"
+      },
+      "delete": {
+        "tags": [
+          "Pools"
+        ],
+        "summary": "Delete a pool",
+        "operationId": "deletePool",
+        "description": "Only when no app uses it; removes its workers.",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/pools/{pool}/reconcile": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/pool"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Pools"
+        ],
+        "summary": "Retry a rollout",
+        "operationId": "reconcilePool",
+        "description": "Re-applies the pool spec (recreates missing or drifted workers). Use after a failed rollout.",
+        "responses": {
+          "200": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queued": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/runtime/versions": {
+      "get": {
+        "tags": [
+          "Pools"
+        ],
+        "summary": "Available Mule CE versions",
+        "operationId": "runtimeVersions",
+        "description": "From MuleSoft's public repository (cached for an hour), with the Java versions each runs on.",
+        "responses": {
+          "200": {
+            "description": "Versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "4.12.0",
+                        "4.11.0"
+                      ]
+                    },
+                    "release": {
+                      "type": "string",
+                      "example": "4.12.0"
+                    },
+                    "java": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "example": {
+                        "4.12.0": [
+                          "17"
+                        ],
+                        "4.4.0": [
+                          "8",
+                          "11"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Read settings",
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Change settings",
+        "operationId": "putSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/tokens": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "List API tokens",
+        "operationId": "listTokens",
+        "description": "Not available to API tokens (403).",
+        "responses": {
+          "200": {
+            "description": "Tokens (no secrets)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Token"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Create an API token",
+        "operationId": "createToken",
+        "description": "Returns the token once; only its SHA-256 is stored. Not available to API tokens (403).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60,
+                    "example": "gitlab-orders-pipeline"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Token"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "example": "rm_..."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/tokens/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Revoke an API token",
+        "operationId": "revokeToken",
+        "responses": {
+          "200": {
+            "description": "Revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/nodes": {
+      "get": {
+        "tags": [
+          "Nodes"
+        ],
+        "summary": "List nodes",
+        "operationId": "listNodes",
+        "description": "Registered nodes with reachability, capacity (CPUs, memory), their workers and the pools using them. Tokens are never returned.",
+        "responses": {
+          "200": {
+            "description": "Nodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NodeInfo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nodes/{node}": {
+      "parameters": [
+        {
+          "name": "node",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,29}$",
+            "example": "node-b"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "Nodes"
+        ],
+        "summary": "Add or change a node",
+        "operationId": "putNode",
+        "description": "Connects to the agent first (address, token and certificate fingerprint must all match) and saves only if that works. On a change the token may be left out to keep the stored one. Then use the node in a pool's `nodes`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeSpec"
+              },
+              "example": {
+                "address": "https://10.0.0.21:7443",
+                "token": "<from install-node.sh>",
+                "fingerprint": "sha256:<64 hex>",
+                "gateway": "10.0.0.10"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-curl": "curl -fsS -X PUT $RM/api/nodes/node-b -H \"Authorization: Bearer $RM_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"address\": \"https://10.0.0.21:7443\", \"token\": \"'\"$NODE_TOKEN\"'\", \"fingerprint\": \"sha256:...\", \"gateway\": \"10.0.0.10\"}'"
+      },
+      "delete": {
+        "tags": [
+          "Nodes"
+        ],
+        "summary": "Remove a node",
+        "operationId": "deleteNode",
+        "description": "Only when no pool has workers on it.",
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "token": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API token from API & settings (`rm_...`)."
+      },
+      "basic": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "RM_USER / RM_PASSWORD from the root .env."
+      },
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "rm_session",
+        "description": "Browser session after Keycloak sign-in."
+      }
+    },
+    "parameters": {
+      "app": {
+        "name": "app",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "example": "orders-api"
+        }
+      },
+      "pool": {
+        "name": "pool",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,29}$",
+          "example": "default"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "UpdateMode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "notify",
+          "off"
+        ],
+        "description": "`auto` deploys new builds/releases, `notify` only reports them, `off` skips checks. Default: auto for SNAPSHOT/RELEASE/LATEST, notify for pinned versions."
+      },
+      "Workers": {
+        "description": "Which workers of the pool the app runs on: `\"all\"` (default), a count (the least busy workers, then kept; if the pool shrinks the app moves to keep the count) or a list of worker names (fine tuning). Changing it redeploys the app.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "all"
+            ]
+          },
+          {
+            "type": "integer",
+            "minimum": 1,
+            "example": 2
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "mule-default-1",
+              "mule-default-3"
+            ]
+          }
+        ]
+      },
+      "Route": {
+        "type": "object",
+        "nullable": true,
+        "description": "Gateway route `<path>/*` to the app's pool workers (prefix stripped). `null` removes it.",
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "/orders"
+          },
+          "port": {
+            "type": "integer",
+            "default": 8081
+          }
+        }
+      },
+      "DeployRequest": {
+        "type": "object",
+        "properties": {
+          "pool": {
+            "type": "string",
+            "example": "default"
+          },
+          "group": {
+            "type": "string",
+            "example": "com.acqua"
+          },
+          "artifact": {
+            "type": "string",
+            "example": "orders-api"
+          },
+          "version": {
+            "type": "string",
+            "description": "Fixed version, RELEASE, LATEST or x-SNAPSHOT.",
+            "example": "1.4.2"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/UpdateMode"
+          },
+          "workers": {
+            "$ref": "#/components/schemas/Workers"
+          },
+          "route": {
+            "$ref": "#/components/schemas/Route"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Replaces the plain properties."
+          },
+          "secureProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            },
+            "description": "Replaces the secure properties; null keeps a stored value."
+          },
+          "restart": {
+            "type": "boolean",
+            "description": "Redeploy even if nothing else changed."
+          }
+        }
+      },
+      "Deployed": {
+        "type": "object",
+        "properties": {
+          "deployed": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "string"
+          },
+          "workers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "mule-default-1",
+              "mule-default-2"
+            ]
+          }
+        }
+      },
+      "Properties": {
+        "type": "object",
+        "properties": {
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "secure": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of secure properties (values are never returned)."
+          }
+        }
+      },
+      "PropertiesUpdate": {
+        "type": "object",
+        "properties": {
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "secureProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        }
+      },
+      "CheckResult": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "build": {
+            "type": "string"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/UpdateMode"
+          },
+          "available": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "build": {
+                "type": "string"
+              }
+            }
+          },
+          "checked": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "App": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "mule_version": {
+                "type": "string"
+              },
+              "java_version": {
+                "type": "string"
+              }
+            }
+          },
+          "workers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "STARTED",
+                "DEPLOYING",
+                "FAILED"
+              ]
+            },
+            "description": "Status on each running worker the app is placed on."
+          },
+          "placement": {
+            "description": "The workers setting: null (all), a count, or a list of names.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The workers it is placed on now."
+          },
+          "route": {
+            "$ref": "#/components/schemas/Route"
+          },
+          "maven": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "group": {
+                "type": "string"
+              },
+              "artifact": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "build": {
+                "type": "string"
+              },
+              "available": {
+                "type": "object",
+                "nullable": true
+              },
+              "checked": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "updates": {
+            "$ref": "#/components/schemas/UpdateMode"
+          },
+          "deployed": {
+            "type": "string"
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Plain property names."
+          },
+          "secure": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Secure property names."
+          }
+        }
+      },
+      "AppList": {
+        "type": "object",
+        "properties": {
+          "pools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/App"
+            }
+          },
+          "routing": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PoolSpec": {
+        "type": "object",
+        "required": [
+          "mule_version"
+        ],
+        "properties": {
+          "mule_version": {
+            "type": "string",
+            "example": "4.12.0",
+            "description": "A Mule CE version from GET /api/runtime/versions."
+          },
+          "java_version": {
+            "type": "string",
+            "example": "17",
+            "description": "Must be supported by the Mule version (4.4: 8/11, 4.5-4.8: 8/11/17, 4.9+: 17). Default: the newest supported."
+          },
+          "heap_mb": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 65536,
+            "default": 1024
+          },
+          "replicas": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 1,
+            "description": "Workers on the local Docker when `nodes` is not given (in responses: the total over all nodes)."
+          },
+          "jvm_options": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^-\\S+$"
+            },
+            "description": "One option per item, no spaces; applies to every app on the pool.",
+            "example": [
+              "-XX:+UseG1GC"
+            ]
+          },
+          "nodes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "example": {
+              "local": 2,
+              "node-b": 2
+            },
+            "description": "Workers per node: `local` = this server, other keys = registered nodes. Leave out to use `replicas` on the local Docker. Node workers are named mule-<pool>-<node>-<n> and publish ports 8081-8090 on the node."
+          }
+        }
+      },
+      "PoolInfo": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PoolSpec"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "working",
+                      "ready",
+                      "error"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "workers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "healthy",
+                        "starting",
+                        "unhealthy",
+                        ""
+                      ]
+                    }
+                  }
+                }
+              },
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "check_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10080,
+            "description": "Minutes between scheduled Maven update checks; 0 = only on demand."
+          }
+        }
+      },
+      "Token": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string"
+          },
+          "last_used": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "auth": {
+            "type": "string",
+            "enum": [
+              "keycloak",
+              "basic",
+              "token"
+            ]
+          },
+          "secure": {
+            "type": "boolean",
+            "description": "Secure properties available (RM_SECRETS_KEY set)."
+          }
+        }
+      },
+      "NodeSpec": {
+        "type": "object",
+        "required": [
+          "address",
+          "fingerprint",
+          "gateway"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "https://10.0.0.21:7443",
+            "description": "The node agent, as printed by install-node.sh."
+          },
+          "token": {
+            "type": "string",
+            "description": "Node token (required when adding; stored encrypted, never returned)."
+          },
+          "fingerprint": {
+            "type": "string",
+            "example": "sha256:3f0c...",
+            "description": "SHA-256 of the agent's certificate (pinned; no CA needed)."
+          },
+          "gateway": {
+            "type": "string",
+            "example": "10.0.0.10",
+            "description": "Host/IP this node's workers reach the platform's APISIX at (logs :9100, traces :9443/otlp). Must be in the gateway certificate (GATEWAY_HOSTNAMES)."
+          }
+        }
+      },
+      "NodeInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "gateway": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "error": {
+                "type": "string",
+                "nullable": true
+              },
+              "info": {
+                "type": "object",
+                "properties": {
+                  "docker": {
+                    "type": "string"
+                  },
+                  "cpus": {
+                    "type": "integer"
+                  },
+                  "memory_mb": {
+                    "type": "integer"
+                  },
+                  "os": {
+                    "type": "string"
+                  }
+                }
+              },
+              "checked": {
+                "type": "string"
+              }
+            }
+          },
+          "workers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "pools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

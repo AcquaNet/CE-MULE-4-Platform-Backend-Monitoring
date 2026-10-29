@@ -1,0 +1,168 @@
+
+
+services:
+  # Mule workers are not compose services: they are runtime pools (Mule version, Java, heap, JVM
+  # options, replicas) that the Runtime Manager runs as containers mule-<pool>-<n> through the Docker
+  # API. The default pool (MULE_VERSION / MULE_JAVA_VERSION from .env) replaces the old two workers;
+  # its workers are mule-default-1, mule-default-2 and APISIX's /api/* follows them.
+
+  ce-base-apachemq-backend:
+    profiles: [mq]
+    build: docker-apache
+    image: 92455890/ce-base-apachemq-backend:${versionApacheMQ}
+    container_name: ce-base-apachemq-backend
+    # host only; clients sign in as admin / ACTIVEMQ_ADMIN_PASSWORD (console also via APISIX /activemq, SSO)
+    ports:
+     - "127.0.0.1:${MULE_MQ_WEB_CONSOL_PORT}:8161"
+     - "127.0.0.1:${MULE_MQ_AMQP_PORT}:5672"
+     - "127.0.0.1:${MULE_MQ_OPENWIRE_PORT}:61616"
+    environment:
+      ACTIVEMQ_ADMIN_PASSWORD: ${ACTIVEMQ_ADMIN_PASSWORD}
+    volumes:   # config is baked into the image (docker-apache/Dockerfile); only the message store persists
+     - CEBackendActiveMQData:/opt/activemq/data
+    networks:
+      ce-base-micronet:
+        ipv4_address: 172.42.0.5
+      ce-base-network:
+    restart: always
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/61616"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      
+  #
+  # Runtime Manager - CloudHub-style UI/API: runtime pools, deployments, properties, updates, overview
+  # https://localhost:9443/runtime-manager/ via APISIX (Keycloak sign-in; RM_USER/RM_PASSWORD or API tokens for scripts)
+  # Core service: it runs the Mule workers, so it has no profile.
+  #
+  ce-base-runtime-manager:
+    build: runtime-manager
+    image: 92455890/ce-base-runtime-manager:1.0
+    container_name: ce-base-runtime-manager
+    environment:
+      RM_USER: ${RM_USER:-admin}
+      RM_PASSWORD: ${RM_PASSWORD:?set RM_PASSWORD in .env}
+      # encrypts secure app properties at rest (lose it = re-enter them)
+      RM_SECRETS_KEY: ${RM_SECRETS_KEY:-}
+      # read by maven-settings.xml (${env.ARTIFACTORY_USER} / ${env.ARTIFACTORY_PASSWORD})
+      ARTIFACTORY_USER: ${ARTIFACTORY_USER:-}
+      ARTIFACTORY_PASSWORD: ${ARTIFACTORY_PASSWORD:-}
+      ATINA_REPOSITORY_PROTOCOL: ${ATINA_REPOSITORY_PROTOCOL}
+      ATINA_REPOSITORY_URL: ${ATINA_REPOSITORY_URL}
+      APISIX_FILE: /apisix/apisix.yaml
+      RM_ROUTE_PLUGIN_CONFIG: mule-api-auth
+      MAVEN_SETTINGS: /maven/settings.xml
+      RM_MAVEN_POLL_SECONDS: ${RM_MAVEN_POLL_SECONDS:-300}
+      # Default app: deployed to the default pool on first start, redeployed when MULEAPP_VERSION changes
+      MULEAPP_GROUP_ID: ${MULEAPP_GROUP_ID}
+      MULEAPP_ARTIFACT_ID: ${MULEAPP_ARTIFACT_ID}
+      MULEAPP_VERSION: ${MULEAPP_VERSION}
+      # Default pool, created on first start (then edit pools in the UI/API)
+      MULE_VERSION: ${MULE_VERSION:-4.12.0}
+      MULE_JAVA_VERSION: ${MULE_JAVA_VERSION:-17}
+      RM_DEFAULT_POOL_HEAP_MB: ${RM_DEFAULT_POOL_HEAP_MB:-1024}
+      RM_DEFAULT_POOL_REPLICAS: ${RM_DEFAULT_POOL_REPLICAS:-2}
+      # Every worker gets these (WORKER_<NAME> -> <NAME>); worker.id / rm.pool are added per container
+      WORKER_mule_env: ${mule_env}
+      WORKER_LOG_INGEST_TOKEN: ${LOG_INGEST_TOKEN}
+      WORKER_OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      WORKER_OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      WORKER_OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${mule_env}
+      WORKER_OTEL_TRACES_EXPORTER: otlp
+      WORKER_OTEL_METRICS_EXPORTER: none
+      WORKER_OTEL_LOGS_EXPORTER: none
+      # Sign-in with Keycloak (realm role RM_OIDC_ROLE) while GATEWAY_AUTH=on (auth profile); else Basic
+      # RM_USER/RM_PASSWORD. Code exchange goes container-to-Keycloak, login redirects go via APISIX :9443.
+      GATEWAY_AUTH: ${GATEWAY_AUTH:-on}
+      RM_OIDC_URL: http://keycloak:8080/auth/realms/${KEYCLOAK_REALM:-mule}
+      RM_OIDC_PUBLIC_URL: https://localhost:9443/auth/realms/${KEYCLOAK_REALM:-mule}
+      RM_OIDC_CLIENT_ID: runtime-manager
+      RM_OIDC_CLIENT_SECRET: ${RM_OIDC_CLIENT_SECRET:-}
+      RM_OIDC_ROLE: ${RM_OIDC_ROLE:-admin}
+      RM_PUBLIC_URL: https://localhost:9443/runtime-manager
+      # Application overview: request stats from Jaeger (tracing profile), log problems from OpenSearch (logging)
+      RM_JAEGER_URL: http://jaeger:16686/jaeger
+      RM_JAEGER_PUBLIC_URL: https://localhost:9443/jaeger
+      RM_OPENSEARCH_URL: https://opensearch:9200
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD}
+      # workers on other servers (nodes) send traces via the gateway /otlp and trust its CA
+      OTLP_INGEST_TOKEN: ${OTLP_INGEST_TOKEN:-}
+    # no published port: reached through APISIX at https://localhost:9443/runtime-manager/
+    expose:
+      - "8080"
+    volumes:
+      # Docker API: creates/replaces the pool workers and builds runtime images (root-equivalent on the host;
+      # the UI/API is admin-only)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # build context of the Mule runtime image (ce-mule-runtime:<mule>-java<java>)
+      - ./docker_mulesoft:/build/mule-runtime:ro
+      - ./volumes/runtime-manager:/data
+      - ./maven-settings.xml:/maven/settings.xml:ro
+      # the gateway's local CA (created by APISIX on first start), handed to workers on nodes
+      - ../certs/ca:/platform-ca:ro
+      # directory, not the single file: a single-file bind goes stale when git replaces it
+      - ../config/apisix:/apisix
+    networks:
+      ce-base-micronet:
+        ipv4_address: 172.42.0.7
+      ce-base-network:
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/openapi.json', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    # on stop it removes the pool workers (recreated on start) so `docker compose down` can drop the networks
+    stop_grace_period: 60s
+
+  ce-base-db-backend:
+    profiles: [db]
+    image: mysql:8.4.13   # LTS; pinned (latest = short-lived innovation releases, and MySQL cannot open a newer data dir)
+    # dev sizing: performance_schema costs ~200 MB, the default buffer pool 128 MB
+    command: ["--performance-schema=OFF", "--innodb-buffer-pool-size=64M"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    container_name: ce-base-db-backend
+    ports:
+     - "127.0.0.1:${MYSQL_EXTERNAL_PORT}:${MYSQL_INTERNAL_PORT}"
+    volumes:
+     - CEBackendDBBackendConfig:${MYSQL_FILE_CONFIG}
+     - CEBackendDBBackendData:${MYSQL_DATA}
+    user: root
+    networks:
+      ce-base-micronet:
+        ipv4_address: 172.42.0.3
+      ce-base-network:
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+               
+# Docker-managed volumes (no host path). ActiveMQ conf must be a named volume:
+# Docker seeds an empty named volume with the image's conf, a bind mount would hide it.
+# Everything you need to see from the host uses relative ./volumes/... binds above
+# (Docker creates those folders on first start).
+volumes:
+  CEBackendActiveMQData:
+  CEBackendDBBackendConfig:
+  CEBackendDBBackendData:
+
+# Must stay IDENTICAL to the networks in the root docker-compose.yml (which includes this
+# file); compose merges identical definitions and errors if they drift apart.
+networks:
+  ce-base-micronet:
+    name: ce-base-micronet
+    ipam:
+      config:
+        - subnet: 172.42.0.0/16
+          # containers without a fixed address (the Mule pool workers) get one from the upper half, so a worker
+          # started first can never take a service's fixed 172.42.0.x address (MySQL's .3 after a Docker restart)
+          ip_range: 172.42.128.0/17
+  ce-base-network:
+    name: ce-base-network

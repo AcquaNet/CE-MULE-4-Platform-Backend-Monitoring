@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+
+	<!-- OpenTelemetry Starter - Initializes OpenTelemetry SDK -->
+	<bean id="otelStarter" class="io.opentelemetry.mule4.agent.OtelStarter" />
+
+	<!-- Pipeline (Flow) Notification Listener -->
+	<bean id="otelPipelineNotificationListener" class="io.opentelemetry.mule4.agent.OtelPipelineNotificationListener" />
+
+	<!-- Message Processor Notification Listener -->
+	<bean id="otelMessageProcessorNotificationListener" class="io.opentelemetry.mule4.agent.OtelMessageProcessorNotificationListener" />
+
+	<!-- Exception Notification Listener -->
+	<bean id="otelExceptionNotificationListener" class="io.opentelemetry.mule4.agent.OtelExceptionNotificationListener" />
+
+</beans>

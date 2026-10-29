@@ -6,7 +6,7 @@
 # in the .env file. Can be run manually or via cron for automated backups.
 #
 # Usage:
-#   ./config/backup/backup.sh [snapshot_name]
+#   ./config/scripts/backup/backup.sh [snapshot_name]
 #
 # If snapshot_name is not provided, it will be auto-generated based on timestamp.
 #
@@ -22,7 +22,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/<area>/
 ENV_FILE="$PROJECT_ROOT/.env"
 
 # Load environment variables from .env
@@ -31,7 +31,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     echo "Please create .env file first:"
     echo "  cp .env.example .env"
-    echo "  ./config/backup/generate-secrets.sh"
+    echo "  ./install.sh   (creates .env with generated secrets)"
     exit 1
 fi
 
@@ -48,7 +48,7 @@ fi
 
 # OpenSearch connection details
 ES_HOST="${ES_HOST:-http://localhost:9080/opensearch}"
-ES_USER="${ES_USER:-elastic}"
+ES_USER="${ES_USER:-admin}"
 ES_PASSWORD="${OPENSEARCH_ADMIN_PASSWORD}"
 REPO_NAME="${BACKUP_REPOSITORY_NAME:-backup-repo}"
 
@@ -104,7 +104,7 @@ if [ "$REPO_EXISTS" -eq 0 ]; then
     echo -e "${RED}Error: Repository '${REPO_NAME}' does not exist${NC}"
     echo ""
     echo "Configure the repository first:"
-    echo "  ./config/backup/configure-backup.sh"
+    echo "  ./config/scripts/backup/configure-backup.sh"
     exit 1
 fi
 echo -e "${GREEN}✓ Repository '${REPO_NAME}' found${NC}"
@@ -239,16 +239,16 @@ if [ "$SNAPSHOT_STATE" = "SUCCESS" ]; then
 
     # Verify snapshot if enabled
     if [ "${VERIFY}" = "true" ]; then
-        echo -e "${GREEN}Verifying snapshot integrity...${NC}"
+        echo -e "${GREEN}Verifying the snapshot repository...${NC}"
 
         VERIFY_RESPONSE=$(curl -s -X POST -u "${ES_USER}:${ES_PASSWORD}" \
-            "${ES_HOST}/_snapshot/${REPO_NAME}/${SNAPSHOT_NAME}/_verify")
+            "${ES_HOST}/_snapshot/${REPO_NAME}/_verify")   # OpenSearch verifies the repository (no per-snapshot verify)
 
         if echo "$VERIFY_RESPONSE" | grep -q "error"; then
-            echo -e "${YELLOW}Warning: Snapshot verification encountered issues${NC}"
+            echo -e "${YELLOW}Warning: Repository verification encountered issues${NC}"
             echo "$VERIFY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$VERIFY_RESPONSE"
         else
-            echo -e "${GREEN}✓ Snapshot verified successfully${NC}"
+            echo -e "${GREEN}✓ Repository verified${NC}"
         fi
         echo ""
     fi
@@ -293,7 +293,7 @@ EOF
     echo "Repository: ${REPO_NAME}"
     echo ""
     echo "To restore this snapshot:"
-    echo "  ${BLUE}./config/backup/restore.sh ${SNAPSHOT_NAME}${NC}"
+    echo -e "  ${BLUE}./config/scripts/backup/restore.sh ${SNAPSHOT_NAME}${NC}"
     echo ""
 
     exit 0

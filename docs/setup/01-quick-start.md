@@ -1,132 +1,100 @@
-# Quick Start Guide
-
-This guide will get you up and running with the ELK + APISIX stack in minutes.
+# Quick Start
 
 ## Prerequisites
 
-- Docker installed and running
-- Docker Compose installed
-- Network ports available: 9080, 9000, 9180, 5000, 5044
+- Docker with Compose v2 (`docker compose`; `include:` needs it)
+- Internet access on the first run: images, plus the Mule CE download when the Runtime Manager builds the runtime image
+- Free host ports: 9443 and 9100 (public); 9080, 9091, 3306, 8161, 5672 and 61616 (bound to 127.0.0.1)
 
-## Starting the Stack
-
-### 1. Start ELK + APISIX Gateway
+## Start
 
 ```bash
-cd "/mnt/c/work/Aqua/Docker ElasticSearch"
-docker-compose up -d
+./install.sh
 ```
 
-This starts:
-- APISIX Gateway (ports 9080, 9000, 9180)
-- etcd (APISIX configuration store)
-- ElasticSearch (internal only, accessed via APISIX)
-- Logstash (ports 5000, 5044 for external inputs)
-- Kibana (internal only, accessed via APISIX)
-- APM Server (port 8200)
+On a fresh clone `install.sh` creates `.env` with generated secrets. It then builds and starts the profiles in
+`COMPOSE_PROFILES` and waits until everything is healthy, including the Runtime Manager's pool workers and the
+default app. Finally it prints the URLs. It is safe to run again.
 
-### 2. Verify APISIX Gateway
+On the first start, APISIX creates a local CA (`certs/ca`) and the gateway certificate (`certs/apisix`). Trust
+`certs/ca/ca.crt` in your OS or browser, or pass `--cacert certs/ca/ca.crt` to curl (Windows curl also needs
+`--ssl-no-revoke`). The Runtime Manager builds `ce-mule-runtime:<mule>-java<java>-<hash>` (e.g.
+`ce-mule-runtime:4.12.0-java17-acc0763048`) and starts the default pool
+(`mule-default-1`, `mule-default-2`).
+
+Day to day:
 
 ```bash
-curl http://localhost:9080/
+docker compose up -d                                       # start
+docker compose down                                        # stop; the Runtime Manager removes its workers
+docker compose --profile "*" down -v --remove-orphans      # full reset, deletes all data
 ```
 
-Expected output: APISIX welcome page or 404 (normal, means gateway is running)
+## Lite installs
 
-### 3. Access Services via APISIX
+Profiles: see the [README](../../README.md#profiles). Gateway plus Mule only:
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Kibana | http://localhost:9080/kibana | None |
-| ElasticSearch | http://localhost:9080/elasticsearch | None |
-| APISIX Dashboard | http://localhost:9000 | admin/admin |
+```env
+COMPOSE_PROFILES=
+GATEWAY_AUTH=off   # required without `auth`: /api/* then has NO authentication
+```
 
-### 4. Test Logstash
+## Memory
 
-Send a test message via TCP:
+Measured with `docker stats`: the default profiles use about **4.6 GB**. Set the Docker memory limit (Docker
+Desktop: Settings > Resources) at least 1 GB above that.
+
+| Part | Approx. memory |
+|------|----------------|
+| APISIX + Runtime Manager (always) | ~0.1 GB |
+| Mule workers (always) | ~0.6 GB each when idle (default pool: 2 workers, heap capped at pool `heap_mb` = 1024 MB) |
+| `logging` | ~1.66 GB (OpenSearch ~1.43, Dashboards ~0.22, Fluent Bit ~0.01) |
+| `tracing` | ~0.02 GB (+ OpenSearch if `logging` is off) |
+| `auth` | ~0.67 GB |
+| `mq` | ~0.24 GB |
+| `db` | ~0.19 GB |
+| `monitoring` | ~0.13 GB |
+| Worker node (other server) | ~0.02 GB agent + ~0.6 GB per worker |
+
+The settings that change these numbers are listed in [06-configuration.md](06-configuration.md#memory).
+
+## First checks
 
 ```bash
-echo '{"message":"Hello from Logstash!", "level":"INFO"}' | nc localhost 5000
+set -a; . ./.env; set +a
+docker compose ps                                                     # all healthy
+curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9443/api/v1/status   # 401: a token is required
 ```
 
-Verify in ElasticSearch:
+Get a token and call the Mule API:
 
 ```bash
-curl http://localhost:9080/elasticsearch/logstash-*/_search?pretty
+TOKEN=$(curl -sk https://localhost:9443/auth/realms/mule/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=mule-api-gateway -d "client_secret=$MULE_GATEWAY_CLIENT_SECRET" \
+  -d username=admin -d "password=$KEYCLOAK_REALM_ADMIN_PASSWORD" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:9443/api/v1/status
 ```
 
-### 5. (Optional) Start Mule Backend
-
-If you want to run the Mule application with 2-worker load balancing:
+Send a test log event and find it:
 
 ```bash
-cd git/CE-MULE-4-Platform-Backend-Docker/CE_Microservice
-docker-compose up -d
+echo '{"auth_token":"'"$LOG_INGEST_TOKEN"'","message":"hello","level":"INFO"}' | nc -w 2 localhost 9100
+sleep 6
+curl -sk -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "http://localhost:9080/opensearch/logstash-*/_search?q=message:hello&pretty"
 ```
 
-Wait for both workers to become healthy (about 2-3 minutes), then test:
+| UI | URL | Login |
+|----|-----|-------|
+| Home page (links to every tool) | https://localhost:9443/ | Keycloak `admin` / `KEYCLOAK_REALM_ADMIN_PASSWORD`, once for all tools |
+| Runtime Manager | https://localhost:9443/runtime-manager/ | same Keycloak session |
+| Dashboards | https://localhost:9443/dashboards/ | same (non-admins see only their tenant's logs) |
+| Jaeger, Prometheus, ActiveMQ | https://localhost:9443/jaeger/ etc. | same (realm role `admin`) |
+| Grafana | https://localhost:9443/grafana/ | same (realm role `admin`) |
 
-```bash
-curl http://localhost:9080/api/v1/status
-```
+Every URL and port is listed in the [README](../../README.md#urls-and-ports). For problems, see
+[07-troubleshooting.md](07-troubleshooting.md).
 
-Expected output:
-```json
-{
-  "status": "OK",
-  "version": "1.0.9",
-  "environment": "local-docker"
-}
-```
+## Next
 
-## Stopping the Stack
-
-### Stop ELK + APISIX only:
-
-```bash
-cd "/mnt/c/work/Aqua/Docker ElasticSearch"
-docker-compose down
-```
-
-### Stop Mule backend:
-
-```bash
-cd git/CE-MULE-4-Platform-Backend-Docker/CE_Microservice
-docker-compose down
-```
-
-### Stop everything and remove data:
-
-```bash
-cd "/mnt/c/work/Aqua/Docker ElasticSearch"
-docker-compose down -v
-
-cd git/CE-MULE-4-Platform-Backend-Docker/CE_Microservice
-docker-compose down -v
-```
-
-## Next Steps
-
-- [Architecture Overview](02-architecture.md) - Understand the system design
-- [APISIX Gateway Guide](03-apisix-gateway.md) - Configure routes and load balancing
-- [ELK Stack Guide](04-elk-stack.md) - ElasticSearch, Logstash, and Kibana details
-- [Mule Backend Guide](05-mule-backend.md) - Deploy and manage Mule applications
-
-## Common Issues
-
-**APISIX returns 502 Bad Gateway:**
-- Check if upstream service is running: `docker ps`
-- Check APISIX logs: `docker logs apisix`
-- Verify routes are configured: See [APISIX Gateway Guide](03-apisix-gateway.md)
-
-**Logstash not receiving data:**
-- Check if Logstash is running: `docker ps | grep logstash`
-- Check Logstash logs: `docker-compose logs logstash`
-- Test connection: `nc -zv localhost 5000`
-
-**Kibana not accessible:**
-- Wait 30-60 seconds for all services to start
-- Check if kibana-setup container completed: `docker ps -a | grep kibana-setup`
-- Access directly (debug only): http://localhost:9080/kibana
-
-For more troubleshooting, see [Chapter 7: Troubleshooting](07-troubleshooting.md).
+[02 Architecture](02-architecture.md) · [03 APISIX](03-apisix-gateway.md) · [04 OpenSearch](04-opensearch.md) ·
+[05 Mule backend](05-mule-backend.md)

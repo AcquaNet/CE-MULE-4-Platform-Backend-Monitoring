@@ -1,28 +1,25 @@
-# Prometheus Configuration for OpenSearch Stack Monitoring
-# This configuration is managed via .env file settings
-#
-# Environment variables used:
-# - PROMETHEUS_SCRAPE_INTERVAL: Default scrape interval (default: 15s)
-# - PROMETHEUS_EVALUATION_INTERVAL: Alert rule evaluation interval (default: 15s)
-# - MONITORING_ENABLED: Enable/disable all monitoring (default: false)
-# - OPENSEARCH_EXPORTER_ENABLED: Enable OpenSearch metrics export (default: false)
-# - LOGSTASH_MONITORING_ENABLED: Enable Logstash monitoring API (default: false)
+# Prometheus scrape config (`monitoring` profile). Edit here; apply with
+# ./config/scripts/monitoring/setup-monitoring.sh --reload (restarts Prometheus).
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
     monitor: 'opensearch-stack-monitor'
-    environment: '${ENVIRONMENT:-development}'
-    cluster: '${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}'
+    # expanded from the container env (--enable-feature=expand-external-labels; defaults are set in docker-compose.yml)
+    environment: '${ENVIRONMENT}'
+    cluster: '${OPENSEARCH_CLUSTER_NAME}'
 
 # Alertmanager configuration
 alerting:
   alertmanagers:
-    - static_configs:
-        - targets:
-            - alertmanager:9093
+    # alerting profile; DNS discovery: no Alertmanager running = no target (not an error)
+    - dns_sd_configs:
+        - names: ['alertmanager']
+          type: A
+          port: 9093
       scheme: http
+      path_prefix: /alertmanager   # Alertmanager runs under /alertmanager (its --web.external-url)
       timeout: 10s
 
 # Load alert rules
@@ -56,80 +53,52 @@ scrape_configs:
         labels:
           service: 'grafana'
           component: 'visualization'
-    metrics_path: '/metrics'
+    metrics_path: '/grafana/metrics'   # Grafana serves from its /grafana sub-path
     scrape_interval: 30s
 
   # OpenSearch metrics via Exporter
   # Uses opensearch-exporter which is compatible with OpenSearch
-  # Enabled when OPENSEARCH_EXPORTER_ENABLED=true
-  - job_name: 'opensearch-exporter'
-    static_configs:
-      - targets: ['opensearch-exporter:9114']
-        labels:
-          service: 'opensearch'
-          component: 'search'
+  - job_name: 'opensearch-exporter'   # opensearch-monitoring profile (DNS discovery: absent = no target)
+    dns_sd_configs:
+      - names: ['opensearch-exporter']
+        type: A
+        port: 9114
+    relabel_configs:
+      - target_label: service
+        replacement: 'opensearch'
+      - target_label: component
+        replacement: 'search'
     scrape_interval: 30s
     scrape_timeout: 10s
 
-  # Logstash monitoring API
-  # Enabled when LOGSTASH_MONITORING_ENABLED=true
-  # Note: Logstash doesn't export Prometheus metrics natively
-  # Use the monitoring API and convert to metrics via custom exporter
-  - job_name: 'logstash'
+  - job_name: 'alertmanager'   # alerting profile (DNS discovery: absent = no target)
+    dns_sd_configs:
+      - names: ['alertmanager']
+        type: A
+        port: 9093
+    relabel_configs:
+      - target_label: service
+        replacement: 'alertmanager'
+      - target_label: component
+        replacement: 'alerting'
+    metrics_path: '/alertmanager/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'fluent-bit'   # log ingestion (logging profile)
     static_configs:
-      - targets: ['logstash:9600']
+      - targets: ['fluent-bit:2020']
         labels:
-          service: 'logstash'
+          service: 'fluent-bit'
           component: 'pipeline'
-    metrics_path: '/_node/stats'
+    metrics_path: '/api/v1/metrics/prometheus'
     scrape_interval: 30s
 
-  # Alertmanager metrics
-  # Enabled when ALERTING_ENABLED=true
-  - job_name: 'alertmanager'
-    static_configs:
-      - targets: ['alertmanager:9093']
-        labels:
-          service: 'alertmanager'
-          component: 'alerting'
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # Jaeger metrics (replaces APM Server)
   - job_name: 'jaeger'
     static_configs:
-      - targets: ['jaeger:14269']
+      - targets: ['jaeger:8888']   # v2 collector metrics
         labels:
           service: 'jaeger'
           component: 'tracing'
     metrics_path: '/metrics'
     scrape_interval: 30s
 
-  # OpenSearch Dashboards health check
-  - job_name: 'opensearch-dashboards'
-    static_configs:
-      - targets: ['opensearch-dashboards:5601']
-        labels:
-          service: 'opensearch-dashboards'
-          component: 'ui'
-    metrics_path: '/dashboards/api/status'
-    scrape_interval: 60s
-    scrape_timeout: 10s
-
-  # Node Exporter (if deployed separately for host metrics)
-  # Uncomment to monitor host system metrics
-  # - job_name: 'node-exporter'
-  #   static_configs:
-  #     - targets: ['node-exporter:9100']
-  #       labels:
-  #         service: 'node-exporter'
-  #         component: 'host'
-
-  # Docker cAdvisor (if deployed for container metrics)
-  # Uncomment to monitor Docker container metrics
-  # - job_name: 'cadvisor'
-  #   static_configs:
-  #     - targets: ['cadvisor:8080']
-  #       labels:
-  #         service: 'cadvisor'
-  #         component: 'containers'

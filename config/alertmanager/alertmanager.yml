@@ -1,13 +1,6 @@
-# Alertmanager Configuration (Default - Disabled State)
-# This is the default configuration when ALERTING_ENABLED=false
-# Alerts are received but not sent to any external notification channels
-#
-# To enable alerting:
-# 1. Set ALERTING_ENABLED=true in .env
-# 2. Configure notification channels (email, Slack, PagerDuty, webhook)
-# 3. Run: ./scripts/setup-monitoring.sh
-#
-# This file will be automatically regenerated based on .env settings
+# Alertmanager config (`alerting` profile). Default: alerts are received but sent nowhere.
+# To send mail: add `alerting` to COMPOSE_PROFILES, set SMTP_* in .env and run
+# ./config/scripts/monitoring/setup-monitoring.sh, which regenerates this file from alertmanager.yml.template.
 
 global:
   resolve_timeout: 5m

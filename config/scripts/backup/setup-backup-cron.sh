@@ -6,7 +6,7 @@
 # the schedule defined in .env file.
 #
 # Usage:
-#   ./config/backup/setup-backup-cron.sh
+#   ./config/scripts/backup/setup-backup-cron.sh
 #
 # Options:
 #   --remove    Remove existing backup cron jobs
@@ -23,7 +23,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # script lives in config/scripts/<area>/
 ENV_FILE="$PROJECT_ROOT/.env"
 
 # Parse arguments
@@ -223,20 +223,20 @@ echo ""
 echo -e "${YELLOW}Useful Commands:${NC}"
 echo ""
 echo "  View cron jobs:"
-echo "    ${BLUE}crontab -l${NC}"
+echo -e "    ${BLUE}crontab -l${NC}"
 echo ""
 echo "  View backup logs:"
-echo "    ${BLUE}tail -f ${LOG_DIR}/backup.log${NC}"
+echo -e "    ${BLUE}tail -f ${LOG_DIR}/backup.log${NC}"
 echo ""
 echo "  View cleanup logs:"
-echo "    ${BLUE}tail -f ${LOG_DIR}/cleanup.log${NC}"
+echo -e "    ${BLUE}tail -f ${LOG_DIR}/cleanup.log${NC}"
 echo ""
 echo "  Remove cron jobs:"
-echo "    ${BLUE}$0 --remove${NC}"
+echo -e "    ${BLUE}$0 --remove${NC}"
 echo ""
 echo "  Run backup manually:"
-echo "    ${BLUE}${BACKUP_SCRIPT}${NC}"
+echo -e "    ${BLUE}${BACKUP_SCRIPT}${NC}"
 echo ""
 echo "  Run cleanup manually:"
-echo "    ${BLUE}${CLEANUP_SCRIPT}${NC}"
+echo -e "    ${BLUE}${CLEANUP_SCRIPT}${NC}"
 echo ""
