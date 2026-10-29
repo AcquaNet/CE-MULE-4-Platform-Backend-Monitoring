@@ -216,3 +216,4 @@ CE-Platform/
 tests/.venv/
 tests/out/
 __pycache__/
+diag.txt

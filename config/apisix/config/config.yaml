@@ -79,6 +79,13 @@ nginx_config:
     client_max_body_size: 50m
     client_body_buffer_size: 512k
 
+  # Dashboards' openid login answers with big Set-Cookie headers (ID + refresh token): nginx's default
+  # 4k/8k response-header buffer 502s it ("upstream sent too big header")
+  http_configuration_snippet: |
+    proxy_buffer_size 32k;
+    proxy_buffers 8 32k;
+    proxy_busy_buffers_size 64k;
+
   # Enable stream (TCP/UDP) proxy (log ingestion)
   stream:
     enable_access_log: true
