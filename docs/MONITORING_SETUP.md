@@ -31,7 +31,14 @@ OTLP to Prometheus' OTLP receiver (`--web.enable-otlp-receiver`). Metric names a
 | `jvm_thread_count`, `jvm_class_count`, `jvm_cpu_recent_utilization_ratio`, `jvm_cpu_time_seconds_total` | threads, classes, CPU |
 
 Labels: `job` = app name, `worker_id` = container, `rm_pool`, `deployment_environment`. Apps sharing a worker report
-the same JVM, so the **Mule JVM** dashboard shows `max by (worker_id)`. Workers on nodes and CloudHub apps send to
+the same JVM, so the **Mule JVM** dashboard shows `max by (worker_id)`. Filters at the top: **App** (label `job`)
+and **Worker** (only the workers running the chosen apps).
+
+Unlike CloudHub, apps here can share workers (an app goes to every worker of its pool by default), and a shared JVM
+can't be split per app: every app on `mule-default-1` reports the same heap/CPU/GC. The top row says which case you
+are looking at: **Shared workers** (orange when > 0: workers of the chosen apps that also run other apps), **Workers
+of the chosen apps** (apps per worker, orange from 2) and **Apps on those workers** (every app on them, including ones
+outside the App filter). For per-app numbers give the app its own pool (dedicated workers, as on CloudHub). Workers on nodes and CloudHub apps send to
 `https://<gateway>:9443/otlp/v1/metrics` (`x-otlp-token`); an app outside the platform opts in with
 `-Dotel.metrics.exporter=otlp` (the agent's default is `none`). No monitoring/alerting profile: workers get
 `OTEL_METRICS_EXPORTER=none`.

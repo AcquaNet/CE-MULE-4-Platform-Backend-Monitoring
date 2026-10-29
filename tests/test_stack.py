@@ -790,6 +790,12 @@ try:
         r = os_api('GET', '_cat/indices/mule-logs-*,logstash-*,jaeger-*?format=json&h=index,rep,health')
         bad = [i for i in r.json() if i['rep'] != '0' or i['health'] != 'green'] if r.status == 200 else r.status
         check('every log/trace index has 0 replicas and is green', bad == [], bad)
+        if need('logging'):  # config/opensearch-dashboards/start.sh: Global tenant (.kibana) patterns, created when missing
+            for ip, title in [('mule-logs', 'mule-logs-*'), ('logstash', 'logstash-*'), ('jaeger-span', 'jaeger-span-*')]:
+                r = os_api('GET', f'.kibana/_doc/index-pattern:{ip}')
+                got = r.json().get('_source', {}).get('index-pattern', {}).get('title') if r.status == 200 else None
+                check(f'Dashboards index pattern {title} in the Global tenant', got == title,
+                      (r.status, sh(['docker', 'logs', '--tail', '20', 'opensearch-dashboards'])[1][-300:] if got != title else ''))
         c, o = run('docker logs log-archiver', 30)
         check('log-archiver started with the .env retention', f"logs {ENV.get('LOGS_RETENTION_DAYS', '365')} days" in o, o[-300:])
         check('log-archiver: no ERROR', 'ERROR' not in o, [l for l in o.splitlines() if 'ERROR' in l][-3:])

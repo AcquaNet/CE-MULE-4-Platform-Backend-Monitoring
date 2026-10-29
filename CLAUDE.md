@@ -144,7 +144,9 @@ Keycloak "My account". How each tool signs in:
   ActiveMQ console itself. Scripts use a bearer token of an admin user (below).
 - Grafana: generic OAuth (client `grafana`), auto-login, realm role admin = Admin of the Grafana org (not server admin), others refused. Local break-glass user
   `GRAFANA_ADMIN_USER` (default `grafana-admin`: not `admin`, that login comes from Keycloak) at `/grafana/login?disableAutoLogin=true`.
-- OpenSearch Dashboards: openid (client `dashboards`, `config/opensearch-dashboards/dashboards-on.yml`; https only);
+- OpenSearch Dashboards: openid (client `dashboards`, `config/opensearch-dashboards/dashboards-on.yml`; https only); entrypoint
+  `config/opensearch-dashboards/start.sh` creates index patterns `mule-logs-*` (default), `logstash-*`, `jaeger-span-*` in the
+  Global tenant when missing (API as admin Basic, `securitytenant: global`; never overwrites);
   OpenSearch takes the ID token (openid domain first, basic second, written by setup-opensearch.sh): `roles` claim =
   backend roles, admin -> all_access, user -> `sso_tenant_logs` (DLS `${attr.jwt.tenant_id}`, Global tenant read-only)
   + kibana_user. Only tokens issued to client `dashboards` (`required_audience`).
@@ -436,7 +438,8 @@ See [BACKUP_SETUP.md](docs/BACKUP_SETUP.md).
 15 s over OTLP to Prometheus (`--web.enable-otlp-receiver`, `http://prometheus:9090/api/v1/otlp/v1/metrics`; node
 workers and CloudHub via the gateway's `/otlp/v1/metrics`, same `x-otlp-token`). `job` = the app, labels `worker_id`,
 `rm_pool`, `deployment_environment` (`otlp.promote_resource_attributes` in prometheus.yml). Grafana dashboard
-**Mule JVM** (folder Platform): heap used/limit, non-heap, GC time, CPU, threads, classes per worker. Without the
+**Mule JVM** (folder Platform; filters App = `job`, Worker): top row Shared workers / apps per worker / apps on them (a shared JVM
+can't be split per app; one pool per app = CloudHub-style dedicated workers), then heap used/limit, non-heap, GC time, CPU, threads, classes per worker. Without the
 `monitoring`/`alerting` profile in `COMPOSE_PROFILES` the Runtime Manager sets `OTEL_METRICS_EXPORTER=none` on workers.
 Apps must be built with the agent that has it (rebuild after `mvn install` of otel-mule4-agent).
 

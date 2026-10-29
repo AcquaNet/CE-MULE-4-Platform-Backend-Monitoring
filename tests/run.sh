@@ -41,7 +41,7 @@ unit() {
   run unit-node-agent "$SYS_PY" node/agent/test_agent.py
   run unit-log-archiver "$SYS_PY" config/log-archiver/test_archiver.py
   run unit-apisix-home-link "$SYS_PY" config/apisix/test_home_link.py
-  run unit-grafana-dashboards "$SYS_PY" -c "import glob, json; fs = glob.glob('config/grafana/provisioning/dashboards/*.json'); [json.load(open(f, encoding='utf-8')) for f in fs]; print(len(fs), 'dashboards parse')"
+  run unit-grafana-dashboards "$SYS_PY" config/grafana/test_dashboards.py
   if command -v mvn >/dev/null; then run unit-otel-agent mvn -q -f otel-mule4-agent/pom.xml test; else echo "SKIP unit-otel-agent: no mvn"; fi
   run unit-compose bash -c 'docker compose --profile "*" config -q && for p in db mq logging tracing monitoring alerting opensearch-monitoring auth; do docker compose --profile "$p" config -q || exit 1; done && echo "compose files valid"'
   run unit-shell-syntax bash -c 'rc=0; while IFS= read -r f; do bash -n "$f" || rc=1; done < <(git ls-files "*.sh"); [ $rc = 0 ] && echo "all scripts parse"; exit $rc'

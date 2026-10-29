@@ -139,8 +139,9 @@ properties (Studio: Run Configurations > Arguments > VM arguments; CloudHub: Pro
 log4j's `${sys:logs.host}` reads **system properties**: putting `logs.host` in the app's `common.properties` does
 nothing (log4j starts before Mule reads that file). Tokens come from the platform's `.env`; every install has its own.
 
-Logs land in `mule-logs-YYYY.MM.DD`. In Dashboards create the index pattern once (Dashboards Management > Index
-patterns: `mule-logs-*`, time field `@timestamp`); its Next button stays grey until at least one log has arrived.
+Logs land in `mule-logs-YYYY.MM.DD`. Dashboards' index patterns `mule-logs-*` (the default in Discover), `logstash-*`
+and `jaeger-span-*` are created in the Global tenant on every Dashboards start when missing
+(`config/opensearch-dashboards/start.sh`; edited ones are kept): pick the **Global** tenant to see them.
 
 ## Retention
 
@@ -163,6 +164,7 @@ bash scripts/diag.sh [out-file]     # default ./diag.txt; run it from the projec
 | `/dashboards` sign-in gives 502, APISIX log `upstream sent too big header` | Dashboards' login cookies outgrow nginx's header buffer; `config/apisix/config/config.yaml` sets 32k buffers: `docker compose up -d --force-recreate apisix` |
 | An edited config file isn't picked up | single files are bind-mounted: a copied/pulled file is a new file, so `docker compose up -d --force-recreate <service>` (restart isn't enough); `apisix.yaml` alone hot-reloads |
 | A tool's link gives 503 | its profile is off or the container never started; the home page should grey it out |
+| Index pattern gone in Dashboards | restart Dashboards (`docker compose restart opensearch-dashboards`) to recreate the standard ones; check the tenant (Global vs Private); `docker compose logs opensearch-dashboards \| grep "index pattern"` |
 | Removing a profile from `COMPOSE_PROFILES` leaves its containers | Compose still knows them (not orphans): `docker compose rm -sf <service>` |
 | Seed app fails: `HTTP Error 401: Unauthorized` | `ARTIFACTORY_USER` / `ARTIFACTORY_PASSWORD` in `.env`, then `docker compose up -d ce-base-runtime-manager` |
 | Don't want Mule workers | `RM_DEFAULT_POOL_REPLICAS=0` before the first start, later the pool's replicas 0 (UI or `PUT /api/pools/default`) |

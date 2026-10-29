@@ -86,6 +86,8 @@ services:
     profiles: [logging]
     image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-2.19.7}
     container_name: opensearch-dashboards
+    # image entrypoint + index patterns mule-logs-*, logstash-*, jaeger-span-* in the Global tenant (created when missing)
+    entrypoint: ["bash", "/usr/share/opensearch-dashboards/start.sh"]
     environment:
       - OPENSEARCH_HOSTS=["https://opensearch:9200"]
       - SERVER_BASEPATH=/dashboards
@@ -98,6 +100,7 @@ services:
     volumes:
       # dashboards-on.yml = Keycloak sign-in, dashboards-off.yml = OpenSearch user/password (GATEWAY_AUTH=off)
       - ./config/opensearch-dashboards/dashboards-${GATEWAY_AUTH:-on}.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+      - ./config/opensearch-dashboards/start.sh:/usr/share/opensearch-dashboards/start.sh:ro
     expose:
       - "5601"
     networks:
