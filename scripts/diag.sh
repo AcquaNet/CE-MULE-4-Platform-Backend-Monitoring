@@ -14,6 +14,13 @@ out=${1:-diag.txt}
     echo "===== disk"; docker system df
     echo "===== stats"; docker stats --no-stream
     echo "===== compose config check"; docker compose config -q && echo ok
+    echo "===== log pipeline: gateway stream (TCP 9100)"; docker exec apisix tail -20 /usr/local/apisix/logs/stream-access.log
+    echo "===== log pipeline: fluent-bit metrics"; docker exec fluent-bit /busybox wget -qO- http://127.0.0.1:2020/api/v1/metrics
+    echo; echo "===== log pipeline: indices"
+    pw=$(grep '^OPENSEARCH_ADMIN_PASSWORD=' .env | cut -d= -f2-)
+    docker exec opensearch curl -sk -u "admin:$pw" "https://localhost:9200/_cat/indices?v&s=index"
+    echo "===== log pipeline: newest mule-logs (no auth_token: fluent-bit strips it)"
+    docker exec opensearch curl -sk -u "admin:$pw" "https://localhost:9200/mule-logs-*/_search?size=5&sort=@timestamp:desc&pretty"
     for c in $(docker compose ps -a -q); do
         name=$(docker inspect -f '{{.Name}}' "$c" | tr -d /)
         echo; echo "===== $name state"
