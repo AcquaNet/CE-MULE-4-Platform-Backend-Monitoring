@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Collect everything needed to debug a failed install into diag.txt (no .env secrets).
 # Usage: scripts/diag.sh [out-file]
+export MSYS_NO_PATHCONV=1   # Git Bash: keep /usr/... container paths as they are
 cd "$(dirname "$0")/.." || exit 1
 [ -f docker-compose.yml ] || { echo "Not in the project: keep this file in <project>/scripts/ and run it from there" >&2; exit 1; }
 out=${1:-diag.txt}

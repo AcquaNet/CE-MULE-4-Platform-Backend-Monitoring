@@ -522,6 +522,8 @@ def t_overview(pg):
     check('tooltip hides on leave', not pg.locator('#chReq .tip').is_visible())
     workers = pg.inner_text('.card:has(h3:text("Workers")) tbody')
     check('workers table lists the app worker with counts', list(rm_app(MVN)['workers'])[0] in workers, workers)
+    head = pg.inner_text('.card:has(h3:text("Workers")) thead')
+    check('workers table has Heap, CPU and GC columns', all(c in head for c in ('Heap', 'CPU', 'GC')), head)
     check('endpoints table lists /api/v1/status', '/v1/status' in pg.inner_text('.card:has(h3:has-text("Endpoints"))'))
     link = pg.locator('a[title="Open trace in Jaeger"]').first
     if has and has['traces'].get('notable'):

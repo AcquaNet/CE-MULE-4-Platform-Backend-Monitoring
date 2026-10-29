@@ -181,6 +181,9 @@ try:
     for s in svcs:
         c, h = sh(['docker', 'inspect', '-f', '{{if .State.Health}}yes{{end}}', s['Name']])
         check(f'{s["Name"]}: has a healthcheck', h.strip() == 'yes', 'no healthcheck')
+    # Dashboards' openid login sets big cookies: nginx's default 4k/8k buffer answered 502 (upstream sent too big header)
+    c, h = sh(['docker', 'exec', 'apisix', 'grep', '-c', 'proxy_buffer_size 32k', '/usr/local/apisix/conf/nginx.conf'])
+    check('APISIX nginx.conf has proxy_buffer_size 32k (config.yaml snippet)', h.strip() not in ('', '0'), h.strip())
     c, out = sh(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=dockerelasticsearch',
                  '--filter', 'status=exited', '--format', '{{.Names}}'])
     exited = [n for n in out.split() if n != 'rm-node-b']
@@ -263,6 +266,19 @@ try:
 
     # ------------------------------------------------------------------------------------------------------------
     section('Gateway routes')
+    # "Home" link (global rule home-link): on tool pages, not on the home page, API answers or compressed assets
+    page = {'Accept': 'text/html', 'Accept-Encoding': 'gzip'}
+    r = get('/runtime-manager/', auth=RM_AUTH, headers=page, follow=True)
+    check('Runtime Manager page has the Home link', r.status == 200 and 'id="ce-home-link"' in r.text, r.status)
+    check('Home link page served uncompressed', r.headers.get('Content-Encoding') in (None, ''), r.headers.get('Content-Encoding'))
+    r = get('/runtime-manager/api/openapi.json', headers=page)
+    check('JSON answer has no Home link', 'ce-home-link' not in r.text, r.status)
+    if AUTH_ON and need('auth') and need('tracing'):
+        r = get('/jaeger/', token=ADMIN_T, headers=page)
+        check('Jaeger page has the Home link (SSO route, X-Frame-Options kept)',
+              'id="ce-home-link"' in r.text and r.headers.get('X-Frame-Options') == 'DENY', r.status)
+        r = get('/', token=ADMIN_T, headers=page)
+        check('home page itself has no Home link', 'ce-home-link' not in r.text, r.status)
     forged = base64.b64encode(json.dumps({'azp': 'gateway-sso', 'roles': ['admin']}).encode()).decode()
     GARBAGE = 'abc.def.ghi'
     if AUTH_ON and need('auth'):
@@ -375,6 +391,12 @@ try:
         check('/otlp GET -> 404 (POST only)', get('/otlp/v1/traces').status == 404)
         check('/otlp token in a query string is not accepted', http('POST', '/otlp/v1/traces?x-otlp-token=' +
                                                                    urllib.parse.quote(ENV['OTLP_INGEST_TOKEN']), empty).status == 401)
+    # /otlp/v1/metrics -> Prometheus OTLP intake (JVM metrics of node workers / CloudHub), same token
+    if need('monitoring') or need('alerting'):
+        pb = {'Content-Type': 'application/x-protobuf'}  # empty body = a valid, empty ExportMetricsServiceRequest
+        check('/otlp/v1/metrics without x-otlp-token -> 401', http('POST', '/otlp/v1/metrics', b'', pb).status == 401)
+        r = http('POST', '/otlp/v1/metrics', b'', dict(pb, **{'x-otlp-token': ENV['OTLP_INGEST_TOKEN']}))
+        check('/otlp/v1/metrics with OTLP_INGEST_TOKEN -> 200 (Prometheus)', r.status == 200, (r.status, r.text[:200]))
     # /api identity headers: live route config (Control API) clears them before the backend
     routes = control('/v1/routes') or []
     api_routes = [r.get('value', r) for r in routes if str(r.get('value', r).get('uri', '')).startswith('/api')]
@@ -681,8 +703,9 @@ try:
                 check('root span http.* attributes', root['attrs'].get('http.method') == 'GET' and
                       str(root['attrs'].get('http.status_code')) == '200' and root['attrs'].get('http.target') == '/api/v1/status',
                       root['attrs'])
-                check('agent scope io.opentelemetry.mule4 0.3.0', root['scope'] == {'name': 'io.opentelemetry.mule4', 'version': '0.3.0'},
-                      root['scope'])
+                agent = re.search(r'<artifactId>otel-mule4-agent</artifactId>\s*<version>([^<]+)', open(os.path.join(ROOT, 'otel-mule4-agent/pom.xml'), encoding='utf-8').read()).group(1)
+                check(f'agent scope io.opentelemetry.mule4 {agent} (otel-mule4-agent/pom.xml; older = app built with an old agent)',
+                      root['scope'] == {'name': 'io.opentelemetry.mule4', 'version': agent}, root['scope'])
                 check('resource: service ce-mule-base, worker.id, SDK 1.67.0', root['res'].get('service.name') == 'ce-mule-base'
                       and str(root['res'].get('worker.id', '')).startswith('mule-') and root['res'].get('telemetry.sdk.version') == '1.67.0',
                       root['res'])
@@ -767,10 +790,9 @@ try:
         r = os_api('GET', '_cat/indices/mule-logs-*,logstash-*,jaeger-*?format=json&h=index,rep,health')
         bad = [i for i in r.json() if i['rep'] != '0' or i['health'] != 'green'] if r.status == 200 else r.status
         check('every log/trace index has 0 replicas and is green', bad == [], bad)
-        for p in ['mule-logs-retention', 'logstash-retention', 'jaeger-retention']:
-            check(f'ISM policy {p} present', os_api('GET', f'_plugins/_ism/policies/{p}').status == 200)
-        c, o = run('./config/scripts/ilm/setup-retention-policy.sh --verify', 180)
-        check('setup-retention-policy.sh --verify', c == 0, o[-300:])
+        c, o = run('docker logs log-archiver', 30)
+        check('log-archiver started with the .env retention', f"logs {ENV.get('LOGS_RETENTION_DAYS', '365')} days" in o, o[-300:])
+        check('log-archiver: no ERROR', 'ERROR' not in o, [l for l in o.splitlines() if 'ERROR' in l][-3:])
         for u, pw in [('admin', 'admin'), ('kibanaserver', 'kibanaserver'), ('readall', 'readall'), ('logstash', 'logstash'),
                       ('kibanaro', 'kibanaro'), ('snapshotrestore', 'snapshotrestore'), ('anomalyadmin', 'anomalyadmin')]:
             check(f'demo user {u}/{pw} -> 401', os_api('GET', '_cluster/health', auth=(u, pw)).status == 401)
@@ -854,6 +876,14 @@ try:
         check('external label environment = ENVIRONMENT', f"environment: {ENV.get('ENVIRONMENT')}" in cfg, 'labels')
         check('external label cluster = OPENSEARCH_CLUSTER_NAME', f"cluster: {ENV.get('OPENSEARCH_CLUSTER_NAME')}" in cfg, 'labels')
         check('external labels have no unexpanded ${...}', '${' not in cfg.split('scrape_configs')[0], 'unexpanded')
+        flags = get('/prometheus/api/v1/status/flags', token=ADMIN_T).json()['data']
+        check('Prometheus OTLP receiver on (--web.enable-otlp-receiver)', flags.get('web.enable-otlp-receiver') == 'true', flags.get('web.enable-otlp-receiver'))
+        r = get('/prometheus/api/v1/query?query=' + urllib.parse.quote('count by (worker_id) (jvm_memory_used_bytes)'), token=ADMIN_T).json()
+        workers = {s['metric'].get('worker_id') for s in r['data']['result']}
+        if workers:
+            check('JVM metrics carry worker_id (promote_resource_attributes)', None not in workers, workers)
+        else:
+            skip('JVM metrics of the workers', 'no worker runs an app built with the current otel-mule4-agent yet')
         rt = get('/prometheus/api/v1/status/runtimeinfo', token=ADMIN_T).json()['data']
         check('Prometheus config reload succeeded', rt.get('reloadConfigSuccess') is True)
         check('Prometheus retention = PROMETHEUS_RETENTION', rt.get('storageRetention', '').startswith(ENV.get('PROMETHEUS_RETENTION', '30d')),
@@ -877,6 +907,7 @@ try:
             check(f"datasource {d['name']} health OK", r.status == 200 and r.json().get('status') == 'OK', r.text[:200])
         dbs = get('/grafana/api/search?type=dash-db', auth=g).json() if u.status == 200 else []
         check('Grafana dashboard Apache APISIX provisioned', any(d['title'] == 'Apache APISIX' for d in dbs), [d['title'] for d in dbs])
+        check('Grafana dashboard Mule JVM provisioned', any(d['title'] == 'Mule JVM' for d in dbs), [d['title'] for d in dbs])
         r = get('/grafana/api/frontend/settings', auth=g).json()
         check('Grafana generic OAuth (Keycloak) enabled', 'generic_oauth' in json.dumps(r.get('oauth', {})) if AUTH_ON else True,
               list(r.get('oauth', {})))

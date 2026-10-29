@@ -24,6 +24,7 @@ public class OtelTransaction {
 	private final Map<String, String> labels = new ConcurrentHashMap<>();
 	private boolean hasException = false;
 	private final Context context;
+	private volatile Span outgoing;  // http:request span in progress: parent for the called app (TraceContext)
 
 	public OtelTransaction(Span span) {
 		this.span = span;
@@ -127,6 +128,25 @@ public class OtelTransaction {
 	 */
 	public Context getContext() {
 		return context;
+	}
+
+	/**
+	 * Context for an outgoing call: the http:request span in progress, else this (root) span.
+	 */
+	public Context getOutgoingContext() {
+		Span s = outgoing;
+		return s == null ? context : context.with(s);
+	}
+
+	public void setOutgoing(Span span) {
+		outgoing = span;
+	}
+
+	/** Forget the outgoing span once it ended (another request may already have replaced it). */
+	public void clearOutgoing(Span span) {
+		if (outgoing == span) {
+			outgoing = null;
+		}
 	}
 
 	/**

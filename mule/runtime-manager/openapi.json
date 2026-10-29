@@ -400,9 +400,9 @@
         "tags": [
           "Apps"
         ],
-        "summary": "Request stats and log problems",
+        "summary": "Request stats, log problems and worker JVMs",
         "operationId": "overview",
-        "description": "Requests, error rate, latency percentiles, per-endpoint/worker/tenant stats and failed or slow requests from Jaeger traces (newest 1500 in the window); ERROR/WARN counts and latest messages from OpenSearch. Each part reports `state: ok | disabled | unreachable`.",
+        "description": "Requests, error rate, latency percentiles, per-endpoint/worker/tenant stats and failed or slow requests from Jaeger traces (newest 1500 in the window); ERROR/WARN counts and latest messages from OpenSearch; `jvm`: heap used/limit (bytes), CPU (0-1), threads and GC seconds per second per worker, now, from Prometheus. Each part reports `state: ok | disabled | unreachable`.",
         "responses": {
           "200": {
             "description": "Overview",

@@ -1,45 +1,60 @@
-# Log and Trace Retention (OpenSearch ISM)
+# Log and Trace Retention (log-archiver)
 
 Fluent Bit writes one index per day (`mule-logs-YYYY.MM.DD`, `logstash-YYYY.MM.DD`) and Jaeger does the same
-(`jaeger-span-YYYY-MM-DD`, `jaeger-service-YYYY-MM-DD`). Retention is an OpenSearch Index State Management (ISM)
-policy that deletes each daily index a number of days after it was created. There is no rollover: the indices are
-already daily, and rollover would need write aliases these writers don't use.
+(`jaeger-span-YYYY-MM-DD`, `jaeger-service-YYYY-MM-DD`). The `log-archiver` service (profiles `logging` and
+`tracing`, started by `./install.sh` / `docker compose up -d`) checks them every `LOG_ARCHIVE_INTERVAL` seconds:
 
-## Apply
+| Indices | Deleted when | Before deleting |
+|---|---|---|
+| `mule-logs-*`, `logstash-*` | older than `LOGS_RETENTION_DAYS` (365), or the oldest ones while OpenSearch's disk is above `LOGS_DISK_MAX_PERCENT` (80) | exported to `./volumes/log-archive/<index>.ndjson.gz` |
+| `jaeger-span-*`, `jaeger-service-*` | older than `JAEGER_RETENTION_DAYS` (30), or the oldest ones under disk pressure | nothing (traces aren't archived) |
+
+- Age is the date in the index name (UTC day), so a restored old index is still recognised as old.
+- Under disk pressure the oldest index goes first (traces before logs of the same day), one at a time, until the
+  disk is below the limit. 80% stays under OpenSearch's own watermarks (85%: no new shards, 95%: indices go
+  read-only and new logs are rejected).
+- Today's indices are never deleted, by age or by disk.
+- A log index is only deleted once its archive is complete: the number of exported documents must match the
+  index's count. If the export fails the index stays and the next pass tries again (`ERROR` line in the log).
+
+Change a value in `.env`, then `docker compose up -d` (recreates the service with the new values).
+
+## The archive
+
+One gzip file per index, one JSON document (`_source`) per line, readable without OpenSearch:
 
 ```bash
-./config/scripts/ilm/setup-retention-policy.sh            # create/update the policies
-./config/scripts/ilm/setup-retention-policy.sh --verify   # ... and list which index has which policy
+zcat volumes/log-archive/mule-logs-2025.10.28.ndjson.gz | head
+zcat volumes/log-archive/mule-logs-2025.10.28.ndjson.gz | grep '"level":"ERROR"' | wc -l
 ```
 
-The script is idempotent: change a value in `.env` and run it again. It
+Without S3 the files stay in `./volumes/log-archive` for good (that is the history): about 5-10x smaller than the
+index was. They are on the host disk, outside OpenSearch's volume, so the disk limit above doesn't count them;
+copy them off or enable S3 if the host disk is small.
 
-- creates or updates three policies, each with an `ism_template`, so every new daily index gets its policy
-  automatically;
-- attaches the policy to existing indices, and moves indices on an older version of the policy to the new one;
-- sets how often ISM checks indices (`ISM_POLL_INTERVAL`).
+## S3 (optional)
 
-| Policy | Indices | `.env` variable | Default |
-|---|---|---|---|
-| `mule-logs-retention` | `mule-logs-*` | `MULE_LOGS_RETENTION_DAYS` | 730 |
-| `logstash-retention` | `logstash-*` | `LOGSTASH_LOGS_RETENTION_DAYS` | 730 |
-| `jaeger-retention` | `jaeger-span-*`, `jaeger-service-*` | `JAEGER_RETENTION_DAYS` | 30 |
-| (ISM job interval) | | `ISM_POLL_INTERVAL` | `10m` |
+```bash
+LOG_ARCHIVE_S3_BUCKET=my-log-archive
+LOG_ARCHIVE_S3_REGION=us-east-1
+LOG_ARCHIVE_S3_PREFIX=log-archive          # key = <prefix>/<index>.ndjson.gz
+LOG_ARCHIVE_S3_ACCESS_KEY=AKIA...
+LOG_ARCHIVE_S3_SECRET_KEY=...
+LOG_ARCHIVE_S3_ENDPOINT=                   # only for S3-compatible stores, e.g. http://minio:9000 (path-style)
+```
 
-Run it once after a fresh install (the policies live in OpenSearch, so `docker compose down -v` removes them).
+Each pass uploads every archive in `./volumes/log-archive` and removes the local copy once S3 has accepted it, so a
+failed upload is simply retried. The key needs `s3:PutObject` on the bucket/prefix, nothing else. One upload is a
+single PUT, so one archive (one day of one index) can be at most 5 GB.
 
 ## Check
 
 ```bash
+docker compose logs log-archiver          # start line with the settings, then archived / deleted / uploaded
 set -a; . ./.env; set +a
-O="http://localhost:9080/opensearch"; A="admin:$OPENSEARCH_ADMIN_PASSWORD"
-curl -s -u "$A" "$O/_plugins/_ism/policies/mule-logs-retention?pretty"   # the policy
-curl -s -u "$A" "$O/_plugins/_ism/explain/mule-logs-*?pretty"            # state of each index
-curl -s -u "$A" "$O/_cat/indices/mule-logs-*,jaeger-*?v&s=index"         # what exists, sizes
+curl -s -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "http://localhost:9080/opensearch/_cat/indices/mule-logs-*,logstash-*,jaeger-*?v&s=index"
+curl -s -u "admin:$OPENSEARCH_ADMIN_PASSWORD" "http://localhost:9080/opensearch/_cat/allocation?v"   # disk.percent
 ```
 
-An index is deleted on the first ISM run after it is older than the limit, so deletion can lag by up to
-`ISM_POLL_INTERVAL` (plus ISM's own jitter).
-
-Snapshots taken by the backup scripts are not affected by these policies; they have their own retention
-(`BACKUP_RETENTION_DAYS`, see [BACKUP_SETUP.md](BACKUP_SETUP.md)).
+Snapshots taken by the backup scripts are separate and have their own retention (`BACKUP_RETENTION_DAYS`, see
+[BACKUP_SETUP.md](BACKUP_SETUP.md)).

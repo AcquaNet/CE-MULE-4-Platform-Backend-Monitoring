@@ -1,0 +1,244 @@
+{
+  "uid": "mule-jvm",
+  "title": "Mule JVM",
+  "tags": [
+    "mule",
+    "jvm"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "description": "JVM of every Mule worker, pushed by otel-mule4-agent to Prometheus (OTLP). One line per worker: apps sharing a worker report the same JVM.",
+  "templating": {
+    "list": [
+      {
+        "name": "worker",
+        "label": "Worker",
+        "type": "query",
+        "datasource": null,
+        "query": {
+          "query": "label_values(jvm_memory_used_bytes, worker_id)",
+          "refId": "worker"
+        },
+        "definition": "label_values(jvm_memory_used_bytes, worker_id)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Heap used / limit",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (jvm_memory_used_bytes{jvm_memory_type=\"heap\", worker_id=~\"$worker\"}))",
+          "legendFormat": "{{worker_id}} used"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (jvm_memory_limit_bytes{jvm_memory_type=\"heap\", worker_id=~\"$worker\"}))",
+          "legendFormat": "{{worker_id}} limit"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Non-heap used (metaspace, code cache)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (jvm_memory_used_bytes{jvm_memory_type=\"non_heap\", worker_id=~\"$worker\"}))",
+          "legendFormat": "{{worker_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "GC time per second",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (rate(jvm_gc_duration_seconds_sum{worker_id=~\"$worker\"}[$__rate_interval])))",
+          "legendFormat": "{{worker_id}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "JVM CPU",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (jvm_cpu_recent_utilization_ratio{worker_id=~\"$worker\"})",
+          "legendFormat": "{{worker_id}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Threads",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (jvm_thread_count{worker_id=~\"$worker\"}))",
+          "legendFormat": "{{worker_id}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Classes loaded",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (worker_id) (sum by (worker_id, job) (jvm_class_count{worker_id=~\"$worker\"}))",
+          "legendFormat": "{{worker_id}}"
+        }
+      ]
+    }
+  ]
+}

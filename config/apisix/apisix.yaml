@@ -229,6 +229,25 @@ routes:
   # x-otlp-token: <OTLP_INGEST_TOKEN>. Inside the network workers send to jaeger:4317 directly; Jaeger's
   # ports are not published.
   #
+  # JVM metrics (OTLP/HTTP) to Prometheus' OTLP intake (monitoring profile): exact path, wins over /otlp/*, so an
+  # app given the base endpoint https://<gateway>:9443/otlp sends traces to Jaeger and metrics here, same token
+  - uri: /otlp/v1/metrics
+    name: otlp-metrics
+    desc: "OpenTelemetry metrics (OTLP/HTTP) to Prometheus, token-checked"
+    methods:
+      - POST
+    upstream:
+      type: roundrobin
+      scheme: http
+      nodes:
+        "prometheus:9090": 1
+    plugins:
+      key-auth:
+        header: x-otlp-token
+        hide_credentials: true
+      proxy-rewrite:
+        uri: /api/v1/otlp/v1/metrics
+
   - uri: /otlp/*
     name: otlp-ingest
     desc: "OpenTelemetry traces (OTLP/HTTP) to Jaeger, token-checked"
@@ -653,6 +672,26 @@ routes:
 # (same auth + rate limit as /api/*). Generated routes live in the
 # "BEGIN runtime-manager" block at the top of routes: - don't edit that block by hand.
 #
+# "Home" link on every tool page (fixed, bottom left): third-party UIs can't be edited, so the gateway inserts it before
+# </body> of their HTML pages. Global rules run besides a route's own plugins (its response-rewrite headers stay).
+# Page loads only (Accept: text/html) go uncompressed, so the body can be rewritten; scripts/CSS keep gzip.
+global_rules:
+  - id: home-link
+    plugins:
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function(conf, ctx) local core = require('apisix.core'); if ngx.re.find(ngx.var.uri, [[^/(runtime-manager|dashboards|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)]], 'jo') and (core.request.header(ctx, 'Accept') or ''):find('text/html', 1, true) then core.request.set_header(ctx, 'Accept-Encoding', nil) end end"
+      response-rewrite:
+        vars:
+          - ["uri", "~~", "^/(runtime-manager|dashboards|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)"]
+          - ["upstream_http_content_type", "~~", "text/html"]
+        filters:
+          - regex: "</body>"
+            scope: once
+            options: "joi"
+            replace: "<a href=\"/\" id=\"ce-home-link\" title=\"Back to the home page\" style=\"position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:6px 12px;border-radius:16px;background:#1f2937;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 6px rgba(0,0,0,.3)\">&larr; Home</a></body>"
+
 plugin_configs:
   # Gateway single sign-on (Keycloak client gateway-sso, one session cookie): "sso" = any signed-in user (home page),
   # "sso-admin" = realm role admin (/jaeger, /prometheus, /activemq). With GATEWAY_AUTH=off start.sh strips

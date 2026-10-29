@@ -153,6 +153,45 @@ services:
       retries: 10
 
   #
+  # Retention: log indices are archived (gzip NDJSON in ./volumes/log-archive, optionally S3) and then deleted after
+  # LOGS_RETENTION_DAYS or when OpenSearch's disk passes LOGS_DISK_MAX_PERCENT; trace indices after JAEGER_RETENTION_DAYS.
+  # config/log-archiver/archiver.py, stdlib only (same base image as the Runtime Manager), ~15 MB.
+  #
+  log-archiver:
+    profiles: [logging, tracing]
+    image: python:3.12-alpine
+    container_name: log-archiver
+    command: ["python", "-u", "/app/archiver.py"]
+    environment:
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - LOGS_RETENTION_DAYS=${LOGS_RETENTION_DAYS:-365}
+      - JAEGER_RETENTION_DAYS=${JAEGER_RETENTION_DAYS:-30}
+      - LOGS_DISK_MAX_PERCENT=${LOGS_DISK_MAX_PERCENT:-80}
+      - LOG_ARCHIVE_INTERVAL=${LOG_ARCHIVE_INTERVAL:-300}
+      - LOG_ARCHIVE_S3_BUCKET=${LOG_ARCHIVE_S3_BUCKET:-}
+      - LOG_ARCHIVE_S3_REGION=${LOG_ARCHIVE_S3_REGION:-}
+      - LOG_ARCHIVE_S3_ENDPOINT=${LOG_ARCHIVE_S3_ENDPOINT:-}
+      - LOG_ARCHIVE_S3_PREFIX=${LOG_ARCHIVE_S3_PREFIX:-}
+      - LOG_ARCHIVE_S3_ACCESS_KEY=${LOG_ARCHIVE_S3_ACCESS_KEY:-}
+      - LOG_ARCHIVE_S3_SECRET_KEY=${LOG_ARCHIVE_S3_SECRET_KEY:-}
+    volumes:
+      - ./config/log-archiver/archiver.py:/app/archiver.py:ro
+      - ./volumes/log-archive:/archive
+    networks:
+      - ce-base-micronet
+      - ce-base-network   # S3
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: always
+    healthcheck:   # the loop touches the heartbeat each pass once OpenSearch answers
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/heartbeat') > 3 * int(os.environ['LOG_ARCHIVE_INTERVAL']) + 60)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  #
   # Jaeger v2 - Distributed Tracing: OTLP from the OpenTelemetry Mule 4 agent, spans stored in OpenSearch.
   # Configured by config/jaeger/config.yaml (v2 has no SPAN_STORAGE_TYPE/ES_* env vars).
   #
@@ -255,6 +294,8 @@ services:
       - '--web.external-url=https://localhost:9443/prometheus/'
       - '--web.route-prefix=/'
       - '--enable-feature=expand-external-labels'
+      # OTLP metrics intake (/api/v1/otlp/v1/metrics): JVM metrics of the Mule workers (otel-mule4-agent)
+      - '--web.enable-otlp-receiver'
     # Prometheus accessible via APISIX at /prometheus
     expose:
       - "9090"

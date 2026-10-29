@@ -10,7 +10,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 root = tempfile.mkdtemp()
 os.environ.update(DATA_DIR=f"{root}/data", APISIX_FILE=f"{root}/apisix.yaml", RM_ROUTE_PLUGIN_CONFIG="mule-api-auth",
                   RM_SECRETS_KEY="test-key", WORKER_TZ="UTC", WORKER_OTEL_RESOURCE_ATTRIBUTES="deployment.environment=test",
-                  RM_MAVEN_POLL_SECONDS="300")
+                  RM_MAVEN_POLL_SECONDS="300", WORKER_OTEL_METRICS_EXPORTER="otlp",
+                  WORKER_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="http://prometheus:9090/api/v1/otlp/v1/metrics",
+                  WORKER_OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="http/protobuf", RM_COMPOSE_PROFILES="logging,monitoring")
 import app  # noqa: E402
 import pools  # noqa: E402
 
@@ -64,6 +66,13 @@ assert env["MULE_ARGS"] == "-M-XX:+UseG1GC" and env["TZ"] == "UTC"
 assert (env["MULE_INIT_HEAP_MB"], env["MULE_MAX_HEAP_MB"]) == ("256", "1024")
 assert env["OTEL_RESOURCE_ATTRIBUTES"] == "deployment.environment=test,worker.id=mule-default-1,rm.pool=default"
 assert cfg["Labels"]["rm.spec"] == pools.container_config("default", spec, "mule-default-1")["Labels"]["rm.spec"]
+# JVM metrics: pushed to Prometheus when the monitoring (or alerting) profile is on, else switched off per worker
+assert env["OTEL_METRICS_EXPORTER"] == "otlp" and env["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"].startswith("http://prometheus:9090/")
+for profiles, want in [("logging,tracing", "none"), ("", "none"), ("alerting", "otlp"), ("*", "otlp")]:
+    os.environ["RM_COMPOSE_PROFILES"] = profiles
+    got = dict(e.split("=", 1) for e in pools.container_config("default", spec, "mule-default-1")["Env"])["OTEL_METRICS_EXPORTER"]
+    assert got == want, (profiles, got)
+os.environ["RM_COMPOSE_PROFILES"] = "logging,monitoring"
 assert pools.properties_text({"a.b": "x=1\nü", "k ey": " lead"}) == b"a.b=x=1\\n\\u00fc\nk\\ ey=\\ lead\n"
 
 # default pool comes up with 2 workers; the /api/* upstream block follows it
@@ -182,6 +191,8 @@ env = dict(e.split("=", 1) for e in cfg["Env"])
 assert cfg["HostConfig"]["PortBindings"]["8081/tcp"] == [{"HostPort": "18010"}] and cfg["NetworkingConfig"] == {}
 assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://platform.lan:9443/otlp" and "-M-Dlogs.host=platform.lan" in env["MULE_ARGS"]
 assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in dict(e.split("=", 1) for e in world["mule-spread-1"]["cfg"]["Env"])
+# node workers: metrics through the gateway (base endpoint -> /otlp/v1/metrics), not the internal prometheus name
+assert "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" not in env and env["OTEL_METRICS_EXPORTER"] == "otlp"
 app.deploy("spreadapp", {"pool": "spread", "route": {"path": "/spread", "port": 8082}}, jar=b"PK spread")
 assert sorted(n for n, c in world.items() if "spreadapp" in c["apps"]) == ["mule-spread-1", "mule-spread-node-b-1", "mule-spread-node-b-2"]
 text = open(app.APISIX_FILE).read()
@@ -388,6 +399,26 @@ pools.exec_in = lambda c, cmd, timeout=0: (0, "a/\na-anchor.txt\nb.jar\nc/\ndefa
 assert pools.app_states("w") == {"a": "STARTED", "b": "DEPLOYING", "c": "FAILED", "e": "DEPLOYING"}, pools.app_states("w")
 pools.exec_in = lambda c, cmd, timeout=0: (0, "x/\n--log--\n")
 assert pools.app_states("w") == {"x": "DEPLOYING"}  # mid-deploy: no anchor yet, nothing in the log
+
+# ---------- overview: worker JVMs from Prometheus (heap, CPU, threads, GC per worker of the app) ----------
+assert app.app_jvm("shop") == {"state": "disabled"}  # no RM_PROMETHEUS_URL
+seen, real_json = [], app._json
+def fake_prom(url, *a, **k):
+    from urllib.parse import parse_qs as pq, urlparse as up
+    q = pq(up(url).query)["query"][0]
+    seen.append(q)
+    val = {"heap": "419430400", "heap_limit": "1073741824", "cpu": "0.25", "threads": "61", "gc": "0.004"}
+    key = next(k for k, t in app.JVM_QUERIES.items() if t.format(job='"shop"') == q)
+    return {"data": {"result": [{"metric": {"worker_id": "mule-default-1"}, "value": [0, val[key]]},
+                                {"metric": {}, "value": [0, "1"]}]}}  # series without worker_id: ignored
+app.PROM_URL, app._json = "http://prometheus:9090", fake_prom
+j = app.app_jvm("shop")
+assert j == {"state": "ok", "workers": {"mule-default-1": {"heap": 419430400.0, "heap_limit": 1073741824.0, "cpu": 0.25,
+                                                           "threads": 61.0, "gc": 0.004}}}, j
+assert all('job="shop"' in q for q in seen) and len(seen) == len(app.JVM_QUERIES)
+app._json = lambda *a, **k: (_ for _ in ()).throw(OSError("no prometheus"))
+assert app.app_jvm("shop")["state"] == "unreachable"
+app.PROM_URL, app._json = "", real_json
 
 # ---------- overview: root spans -> totals, error rate, per-endpoint/worker/tenant, time buckets ----------
 now = 1_000_000_000_000_000

@@ -10,6 +10,11 @@ global:
     environment: '${ENVIRONMENT}'
     cluster: '${OPENSEARCH_CLUSTER_NAME}'
 
+# OTLP intake (--web.enable-otlp-receiver): Mule workers push JVM metrics (otel-mule4-agent). job = service.name (the
+# app), instance = service.instance.id; these resource attributes become labels too (worker_id, rm_pool, ...)
+otlp:
+  promote_resource_attributes: [worker.id, rm.pool, deployment.environment, service.version]
+
 # Alertmanager configuration
 alerting:
   alertmanagers:

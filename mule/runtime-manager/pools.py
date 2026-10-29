@@ -240,18 +240,30 @@ def worker_env():
     return {k[len("WORKER_"):]: v for k, v in os.environ.items() if k.startswith("WORKER_") and v != ""}
 
 
+def metrics_on():
+    """Prometheus runs (monitoring or alerting profile in COMPOSE_PROFILES): workers push JVM metrics to it.
+    ponytail: reads .env's COMPOSE_PROFILES, so a `--profile monitoring` on the command line alone isn't seen."""
+    profiles = {p.strip() for p in os.environ.get("RM_COMPOSE_PROFILES", "").split(",")}
+    return bool(profiles & {"monitoring", "alerting", "*"})
+
+
 def container_config(pool, spec, name, remote=None):
     """remote (worker on a node): {"port": first host port, "gateway": host the node reaches the platform at,
     "ca": platform CA PEM, "otlp_token": ...}. Such a worker publishes 8081..8090 on the node and sends logs
     and traces through the gateway (9100, /otlp) instead of the internal log-ingest/jaeger names."""
     args = ["-M" + o for o in spec["jvm_options"]]
     env = worker_env()
+    if not metrics_on():  # nothing would take them: don't post metrics into the void every interval
+        env["OTEL_METRICS_EXPORTER"] = "none"
     attrs = ",".join(filter(None, [env.get("OTEL_RESOURCE_ATTRIBUTES", ""), f"worker.id={name}", f"rm.pool={pool}"]))
     if remote:
         gw = remote["gateway"]
         args += [f"-M-Dlogs.host={gw}", "-M-Dlogs.port=9100"]
         env.update(OTEL_EXPORTER_OTLP_ENDPOINT=f"https://{gw}:9443/otlp", OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
                    OTEL_EXPORTER_OTLP_HEADERS=f"x-otlp-token={remote['otlp_token']}")
+        # metrics too through the gateway (/otlp/v1/metrics -> Prometheus), not the internal prometheus name
+        env.pop("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", None)
+        env.pop("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", None)
         if remote.get("ca"):
             env["PLATFORM_CA_PEM"] = remote["ca"]  # mule-start.sh adds it to the JVM truststore
     # heap via the wrapper's own settings (wrapper-platform.conf): -M-Xmx would lose to them. Start small,

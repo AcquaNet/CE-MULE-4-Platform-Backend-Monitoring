@@ -1,5 +1,7 @@
 package io.opentelemetry.mule4.agent;
 
+import java.util.Optional;
+
 import org.mule.runtime.api.notification.ExceptionNotification;
 import org.mule.runtime.api.notification.MessageProcessorNotification;
 import org.mule.runtime.api.notification.PipelineMessageNotification;
@@ -8,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import io.opentelemetry.mule4.agent.exception.ExceptionUtils;
 import io.opentelemetry.mule4.agent.span.SpanUtils;
+import io.opentelemetry.mule4.agent.transaction.OtelTransaction;
 import io.opentelemetry.mule4.agent.transaction.TransactionStore;
 import io.opentelemetry.mule4.agent.transaction.TransactionUtils;
 
@@ -20,7 +23,14 @@ public class OtelHandler {
 	private static final Logger logger = LoggerFactory.getLogger(OtelHandler.class);
 
 	// Store for all active transactions in flight
-	private static TransactionStore transactionStore = new TransactionStore();
+	static final TransactionStore transactionStore = new TransactionStore();  // package-private: TraceContextTest
+
+	/**
+	 * Transaction (root span) of a flow in flight, by correlation ID.
+	 */
+	public static Optional<OtelTransaction> getTransaction(String correlationId) {
+		return correlationId == null ? Optional.empty() : transactionStore.getTransaction(correlationId);
+	}
 
 	/**
 	 * Handle Mule process step start event.

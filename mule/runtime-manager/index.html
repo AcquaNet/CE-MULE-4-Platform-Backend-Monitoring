@@ -231,6 +231,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const fmtMs = v => v == null ? '—' : v < 1000 ? `${v < 10 ? v.toFixed(1) : Math.round(v)} ms` : `${(v / 1000).toFixed(2)} s`;
 const fmtPct = v => `${(v * 100).toFixed(v > 0 && v < .01 ? 2 : 1)}%`;
 const fmtNum = v => v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
+const fmtMB = v => v == null ? '—' : v >= 1024 ** 3 ? `${(v / 1024 ** 3).toFixed(1)} GB` : `${Math.round(v / 1024 ** 2)} MB`;
 const timeOf = ms => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const UPDATES = { auto: ['Auto', 'New builds/releases are deployed automatically'],
                   notify: ['Notify', 'New builds/releases are flagged here; you deploy them'],
@@ -476,12 +477,13 @@ function renderOverview() {
       <div class="card"><h3>p95 latency <small>per ${bucketLabel(tr.bucket_ms)}</small></h3><div class="chart" id="chLat"></div></div>
     </div>` : '';
 
-  const workers = workerRows(ov.app, tr, lg);
+  const workers = workerRows(ov.app, tr, lg, ov.jvm || { state: 'disabled' });
   const tables = `
     <div class="grid two" style="margin-top:16px">
       <div class="card"><h3>Workers</h3><div class="wrap"><table>
-        <thead><tr><th>Worker</th><th>Status</th><th class="r">Requests</th><th class="r">Errors</th><th class="r">p95</th><th class="r">Log lines</th></tr></thead>
-        <tbody>${workers}</tbody></table></div></div>
+        <thead><tr><th>Worker</th><th>Status</th><th class="r">Requests</th><th class="r">Errors</th><th class="r">p95</th><th class="r">Log lines</th>
+          <th class="r" title="JVM heap used / limit, now">Heap</th><th class="r" title="JVM CPU, now">CPU</th><th class="r" title="time in garbage collection, last 5 min">GC</th></tr></thead>
+        <tbody>${workers}</tbody></table></div>${jvmNote(ov.jvm || { state: 'disabled' })}</div>
       <div class="card"><h3>Endpoints <small>top ${t ? Math.min(20, tr.endpoints.length) : 0}</small></h3>${t && tr.endpoints.length ? `<div class="wrap"><table>
         <thead><tr><th>Endpoint</th><th class="r">Requests</th><th class="r">Error rate</th><th class="r">p95</th><th class="r">Avg</th></tr></thead>
         <tbody>${tr.endpoints.map(e => `<tr><td class="mono clip" title="${esc(e.endpoint)}">${esc(e.endpoint)}</td><td class="r num">${e.count}</td>
@@ -520,7 +522,21 @@ function tile(label, value, hint, kind = '') {
 }
 const bucketLabel = ms => ms >= 3600000 ? `${Math.round(ms / 3600000)} h` : ms >= 60000 ? `${Math.round(ms / 60000)} min` : `${Math.round(ms / 1000)} s`;
 
-function workerRows(app, tr, lg) {
+function jvmNote(jvm) {
+  if (jvm.state === 'ok') return Object.keys(jvm.workers).length ? '' :
+    '<p class="help">Heap/CPU/GC: no JVM metrics from this app yet (build it with the current otel-mule4-agent).</p>';
+  return `<p class="help">Heap/CPU/GC: ${jvm.state === 'disabled' ? 'Prometheus is not configured for the Runtime Manager.' : 'Prometheus is unreachable (enable the monitoring profile).'}</p>`;
+}
+
+function jvmCells(j) {
+  if (!j) return '<td class="r num">—</td><td class="r num">—</td><td class="r num">—</td>';
+  const pct = j.heap != null && j.heap_limit > 0 ? j.heap / j.heap_limit : null;
+  const heap = `${fmtMB(j.heap)}${j.heap_limit > 0 ? ` / ${fmtMB(j.heap_limit)}` : ''}`;
+  return `<td class="r num nw">${pct != null && pct >= .85 ? `<span class="badge warn" title="${fmtPct(pct)} of the heap">${heap}</span>` : heap}</td>
+    <td class="r num">${j.cpu != null ? fmtPct(j.cpu) : '—'}</td><td class="r num">${j.gc != null ? fmtPct(j.gc) : '—'}</td>`;
+}
+
+function workerRows(app, tr, lg, jvm) {
   // traces (worker.id) and logs (worker_id) name workers by container, like the pool does
   const byW = Object.fromEntries((tr.state === 'ok' ? tr.workers : []).map(w => [w.worker, w]));
   const rows = Object.keys(app?.workers || {}).map(w => {
@@ -528,9 +544,9 @@ function workerRows(app, tr, lg) {
     const le = lg.state === 'ok' && lg.workers?.[w] != null ? [w, lg.workers[w]] : null;
     const badge = s ? `<span class="badge ${s === 'STARTED' ? 'good' : s === 'FAILED' ? 'bad' : 'warn'}">${esc(s.toLowerCase())}</span>` : '<span class="badge">not deployed</span>';
     return `<tr><td>${esc(w)}</td><td>${badge}</td><td class="r num">${tw ? tw.count : '—'}</td><td class="r num">${tw ? tw.errors : '—'}</td>
-      <td class="r num">${tw ? fmtMs(tw.p95) : '—'}</td><td class="r num">${le ? fmtNum(le[1]) : '—'}</td></tr>`;
+      <td class="r num">${tw ? fmtMs(tw.p95) : '—'}</td><td class="r num">${le ? fmtNum(le[1]) : '—'}</td>${jvmCells(jvm.state === 'ok' ? jvm.workers[w] : null)}</tr>`;
   });
-  return rows.join('') || '<tr><td colspan="6" class="placeholder">The pool has no running workers.</td></tr>';
+  return rows.join('') || '<tr><td colspan="9" class="placeholder">The pool has no running workers.</td></tr>';
 }
 
 // ---------- charts (inline SVG, hover tooltips) ----------

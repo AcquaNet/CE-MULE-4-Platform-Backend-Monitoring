@@ -70,7 +70,13 @@ services:
       WORKER_OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       WORKER_OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${mule_env}
       WORKER_OTEL_TRACES_EXPORTER: otlp
-      WORKER_OTEL_METRICS_EXPORTER: none
+      # JVM metrics (heap, GC, threads, CPU) to Prometheus' OTLP intake; turned off per worker when no Prometheus
+      # runs (RM_COMPOSE_PROFILES without monitoring/alerting, see pools.metrics_on)
+      WORKER_OTEL_METRICS_EXPORTER: otlp
+      WORKER_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+      WORKER_OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: http/protobuf
+      WORKER_OTEL_METRIC_EXPORT_INTERVAL: 15000
+      RM_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
       WORKER_OTEL_LOGS_EXPORTER: none
       # Sign-in with Keycloak (realm role RM_OIDC_ROLE) while GATEWAY_AUTH=on (auth profile); else Basic
       # RM_USER/RM_PASSWORD. Code exchange goes container-to-Keycloak, login redirects go via APISIX :9443.
@@ -85,6 +91,7 @@ services:
       RM_JAEGER_URL: http://jaeger:16686/jaeger
       RM_JAEGER_PUBLIC_URL: https://localhost:9443/jaeger
       RM_OPENSEARCH_URL: https://opensearch:9200
+      RM_PROMETHEUS_URL: http://prometheus:9090   # overview: worker heap/CPU/GC (monitoring profile)
       OPENSEARCH_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD}
       # workers on other servers (nodes) send traces via the gateway /otlp and trust its CA
       OTLP_INGEST_TOKEN: ${OTLP_INGEST_TOKEN:-}

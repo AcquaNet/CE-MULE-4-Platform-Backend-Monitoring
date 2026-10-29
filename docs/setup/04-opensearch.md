@@ -40,10 +40,10 @@ Inside the container, use `docker exec opensearch curl -sk -u "admin:$OPENSEARCH
 | Pattern | Written by | Notes |
 |---------|------------|-------|
 | `mule-logs-YYYY.MM.DD` | Fluent Bit | Mule events (`log_type: mule` or an `application` field); `tenant_id`, `level`, `application`, `worker_id`, `correlationId` are `keyword` |
-| `logstash-YYYY.MM.DD` | Fluent Bit | any other event (the name is kept for the templates, DLS roles and ISM) |
+| `logstash-YYYY.MM.DD` | Fluent Bit | any other event (the name is kept for the templates, DLS roles and log-archiver) |
 | `jaeger-span-*`, `jaeger-service-*` | Jaeger | traces |
 
-Retention (ISM): see [RETENTION_POLICY_GUIDE.md](../RETENTION_POLICY_GUIDE.md). Snapshots: see
+Retention (log-archiver: archive + delete by age or disk): see [RETENTION_POLICY_GUIDE.md](../RETENTION_POLICY_GUIDE.md). Snapshots: see
 [BACKUP_SETUP.md](../BACKUP_SETUP.md).
 
 ## Multi-tenancy (DLS)

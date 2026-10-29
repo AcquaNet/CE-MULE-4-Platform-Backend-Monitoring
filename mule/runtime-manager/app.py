@@ -75,6 +75,7 @@ SESSIONS, PENDING = {}, {}  # session id -> user; login state -> (pkce verifier,
 JAEGER_URL = os.environ.get("RM_JAEGER_URL", "").rstrip("/")            # e.g. http://jaeger:16686/jaeger
 JAEGER_PUBLIC = os.environ.get("RM_JAEGER_PUBLIC_URL", "").rstrip("/")  # trace links for the browser
 OS_URL = os.environ.get("RM_OPENSEARCH_URL", "").rstrip("/")
+PROM_URL = os.environ.get("RM_PROMETHEUS_URL", "").rstrip("/")         # JVM metrics the agent pushes (monitoring)
 OS_AUTH = (os.environ.get("OPENSEARCH_USER", "admin"), os.environ.get("OPENSEARCH_PASSWORD", "admin"))
 NODE_PORT_BASE = int(os.environ.get("RM_NODE_PORT_BASE", "18000"))  # remote workers: 10 ports each from here
 PLATFORM_CA = os.environ.get("RM_PLATFORM_CA", "/platform-ca/ca.crt")    # remote workers trust the gateway with it
@@ -1152,9 +1153,38 @@ def brief(msg):
     return lines[0][:300] if lines else msg[:300]
 
 
+# per worker, now: job = the app's service.name (otel-mule4-agent pushes it over OTLP)
+JVM_QUERIES = {
+    "heap": 'sum by (worker_id) (jvm_memory_used_bytes{{job={job}, jvm_memory_type="heap"}})',
+    "heap_limit": 'sum by (worker_id) (jvm_memory_limit_bytes{{job={job}, jvm_memory_type="heap"}})',
+    "cpu": 'max by (worker_id) (jvm_cpu_recent_utilization_ratio{{job={job}}})',
+    "threads": 'sum by (worker_id) (jvm_thread_count{{job={job}}})',
+    "gc": 'sum by (worker_id) (rate(jvm_gc_duration_seconds_sum{{job={job}}}[5m]))',  # GC seconds per second
+}
+
+
+def app_jvm(name):
+    """{"state", "workers": {worker: {heap, heap_limit, cpu, threads, gc}}} from Prometheus; empty workers = the app's
+    agent pushes no metrics (older agent, or metrics off)."""
+    if not PROM_URL:
+        return {"state": "disabled"}
+    workers = {}
+    try:
+        for key, q in JVM_QUERIES.items():
+            r = _json(f"{PROM_URL}/api/v1/query?" + urlencode({"query": q.format(job=json.dumps(name))}))
+            for s in r["data"]["result"]:
+                w = s["metric"].get("worker_id")
+                if w:
+                    workers.setdefault(w, {})[key] = float(s["value"][1])
+    except Exception as e:  # monitoring profile off
+        return {"state": "unreachable", "error": str(e)}
+    return {"state": "ok", "workers": workers}
+
+
 def overview(name, minutes):
     app = next((a for a in list_apps()["apps"] if a["name"] == name), None)
-    return {"app": app, "minutes": minutes, "traces": app_traces(name, minutes), "logs": app_logs(name, minutes)}
+    return {"app": app, "minutes": minutes, "traces": app_traces(name, minutes), "logs": app_logs(name, minutes),
+            "jvm": app_jvm(name)}
 
 
 # ---------- Sign-in: Keycloak OIDC (authorization code + PKCE) ----------
@@ -1547,5 +1577,5 @@ if __name__ == "__main__":
           f"maven repos: {[r['id'] for r in maven_repos()]}, update check every {settings()['check_minutes']} min, "
           f"sign-in: {'keycloak ' + OIDC_PUBLIC + ' role ' + OIDC_ROLE if OIDC else 'basic'}, "
           f"secure properties: {'on' if SECRETS_KEY else 'off (set RM_SECRETS_KEY)'}, "
-          f"traces: {JAEGER_URL or 'off'}, logs: {OS_URL or 'off'}", flush=True)
+          f"traces: {JAEGER_URL or 'off'}, logs: {OS_URL or 'off'}, jvm: {PROM_URL or 'off'}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

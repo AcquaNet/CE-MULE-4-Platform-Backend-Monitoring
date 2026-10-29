@@ -57,8 +57,11 @@ public class SpanUtils {
 				.setAttribute("mule.processor.action", getAction(notification))
 				.startSpan();
 
-		// Propagate trace context for HTTP requests
-		checkAndPropagateTraceContext(span, notification);
+		// HTTP requests: the called app's flow becomes a child of this span (TraceContext.headers)
+		if (HttpTracingUtils.isHttpRequester(notification)) {
+			span.setAttribute("http.outgoing", true);
+			transaction.setOutgoing(span);
+		}
 
 		// Set span details
 		setSpanDetails(span, notification);
@@ -66,15 +69,6 @@ public class SpanUtils {
 		// Store the span
 		String spanId = getSpanId(notification);
 		transactionStore.addSpan(transactionId, spanId, span);
-	}
-
-	/**
-	 * Check if this is an HTTP request and propagate trace context.
-	 */
-	private static void checkAndPropagateTraceContext(Span span, MessageProcessorNotification notification) {
-		if (HttpTracingUtils.isHttpRequester(notification)) {
-			HttpTracingUtils.propagateTraceContext(span, notification);
-		}
 	}
 
 	/**
@@ -152,6 +146,7 @@ public class SpanUtils {
 		if (spanOpt.isPresent()) {
 			Span span = spanOpt.get();
 			setFinalDetails(span, notification);
+			transactionStore.getTransaction(transactionId).ifPresent(t -> t.clearOutgoing(span));
 			span.end();
 		} else {
 			logger.debug("Could not find span {} for transaction {}", spanId, transactionId);

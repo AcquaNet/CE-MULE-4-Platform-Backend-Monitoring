@@ -2,6 +2,8 @@ package io.opentelemetry.mule4.agent;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 import org.mule.runtime.api.lifecycle.Disposable;
@@ -14,6 +16,7 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.instrumentation.runtimetelemetry.RuntimeTelemetry;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import io.opentelemetry.sdk.resources.Resource;
@@ -48,7 +51,18 @@ public class OtelStarter implements Initialisable, Disposable {
 			return "unknown";
 		}
 	}
+	/**
+	 * The agent only makes traces (and the platform's intake, Jaeger, only takes traces): metrics and logs export
+	 * default to off, else the SDK posts them every minute and logs a 404. OTEL_* env / otel.* system properties win.
+	 */
+	static final Map<String, String> DEFAULTS = new HashMap<>();
+	static {
+		DEFAULTS.put("otel.metrics.exporter", "none");
+		DEFAULTS.put("otel.logs.exporter", "none");
+	}
+
 	private static volatile OpenTelemetrySdk sdk;
+	private static volatile AutoCloseable runtimeMetrics;
 	private static volatile OpenTelemetry openTelemetry;
 	private static volatile Tracer tracer;
 
@@ -87,10 +101,12 @@ public class OtelStarter implements Initialisable, Disposable {
 			}
 			Resource app = Resource.create(attrs.build());
 			sdk = AutoConfiguredOpenTelemetrySdk.builder()
+					.addPropertiesSupplier(() -> DEFAULTS)
 					.addResourceCustomizer((resource, config) -> resource.merge(app))
 					.build()
 					.getOpenTelemetrySdk();
 			openTelemetry = sdk;
+			runtimeMetrics = startRuntimeMetrics(sdk);
 			logger.info("OpenTelemetry initialized for service {} {}", name, version);
 		} catch (Exception e) {
 			logger.error("Failed to initialize OpenTelemetry, tracing disabled", e);
@@ -99,13 +115,39 @@ public class OtelStarter implements Initialisable, Disposable {
 		tracer = openTelemetry.getTracer(INSTRUMENTATION_NAME, INSTRUMENTATION_VERSION);
 	}
 
+	/**
+	 * JVM metrics (jvm.memory.*, jvm.gc.duration, jvm.thread.count, jvm.cpu.*, jvm.class.*) on this SDK's meters: they
+	 * only leave the JVM when a metrics exporter is configured (OTEL_METRICS_EXPORTER, default none). Never fatal.
+	 */
+	static AutoCloseable startRuntimeMetrics(OpenTelemetry otel) {
+		try {
+			return RuntimeTelemetry.create(otel);
+		} catch (Throwable t) {
+			logger.warn("JVM metrics not available: {}", t.toString());
+			return null;
+		}
+	}
+
 	private static synchronized void shutdown() {
+		if (runtimeMetrics != null) {
+			try {
+				runtimeMetrics.close();
+			} catch (Exception e) {
+				// closing observers only
+			}
+			runtimeMetrics = null;
+		}
 		if (sdk != null) {
 			sdk.close();  // flushes pending spans, stops exporter threads
 		}
 		sdk = null;
 		openTelemetry = null;
 		tracer = null;
+	}
+
+	/** The SDK, for tests (null when tracing is off). */
+	static OpenTelemetrySdk sdk() {
+		return sdk;
 	}
 
 	public static OpenTelemetry getOpenTelemetry() {

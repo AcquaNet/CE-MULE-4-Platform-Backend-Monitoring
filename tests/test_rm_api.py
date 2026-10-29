@@ -636,6 +636,17 @@ try:
     check('overview traces per worker: mule-t-api-pool-1 counted', any(w['worker'] == W1 and w['count'] > 0 for w in tr.get('workers', [])), tr.get('workers'))
     check('overview endpoints include GET .../api/v1/status', any('/api/v1/status' in e['endpoint'] for e in tr.get('endpoints', [])), tr.get('endpoints'))
     check('overview logs: state ok, total/levels/workers/problems', lg.get('state') == 'ok' and all(k in lg for k in ('total', 'levels', 'workers', 'problems')), lg)
+    jv = ov.get('jvm', {})
+    if need('monitoring') or need('alerting'):
+        check('overview jvm: state ok (Prometheus)', jv.get('state') == 'ok', jv)
+        if jv.get('workers'):
+            w = next(iter(jv['workers'].values()))
+            check('overview jvm per worker: heap <= limit, cpu 0..1, threads > 0',
+                  0 < w.get('heap', 0) <= w.get('heap_limit', float('inf')) and 0 <= w.get('cpu', 0) <= 1 and w.get('threads', 0) > 0, jv)
+        else:
+            skip('overview jvm per worker', 'the test app was built with an agent without JVM metrics')
+    else:
+        check('overview jvm: unreachable without the monitoring profile', jv.get('state') == 'unreachable', jv)
     r = rm('GET', f'api/apps/{MVN}/overview?minutes=60')
     check('overview?minutes=60: 30 buckets of 2 min', r.status == 200 and r.json()['minutes'] == 60 and r.json()['traces']['bucket_ms'] == 120000, short(r))
     for qv, want in [('1', 5), ('99999', 1440), ('abc', 60), ('', 60)]:

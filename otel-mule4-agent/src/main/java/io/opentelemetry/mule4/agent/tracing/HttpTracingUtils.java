@@ -7,9 +7,6 @@ import org.mule.runtime.api.notification.MessageProcessorNotification;
 import org.mule.runtime.api.notification.PipelineMessageNotification;
 import org.mule.runtime.api.util.MultiMap;
 
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.context.Context;
-import io.opentelemetry.context.propagation.TextMapSetter;
 import io.opentelemetry.mule4.agent.OtelStarter;
 import io.opentelemetry.mule4.agent.transaction.OtelTransaction;
 
@@ -127,26 +124,5 @@ public class HttpTracingUtils {
 		String namespace = identifier.getNamespaceUri();
 
 		return HTTP_REQUEST_NAME.equals(name) && HTTP_REQUEST_NAMESPACE.equals(namespace);
-	}
-
-	/**
-	 * Propagate trace context to outgoing HTTP request.
-	 * Note: This is a placeholder - actual implementation requires
-	 * integration with Mule's HTTP requester to inject headers.
-	 */
-	public static void propagateTraceContext(Span span, MessageProcessorNotification notification) {
-		// In a full implementation, you would:
-		// 1. Get the HTTP request builder from the notification
-		// 2. Inject traceparent and tracestate headers
-
-		// For now, we just add attributes to track that this is an outgoing HTTP call
-		span.setAttribute("http.outgoing", true);
-
-		// The actual header injection would require Mule-specific integration
-		// Example pseudocode:
-		// OtelStarter.getOpenTelemetry()
-		//     .getPropagators()
-		//     .getTextMapPropagator()
-		//     .inject(Context.current().with(span), httpRequestBuilder, setter);
 	}
 }

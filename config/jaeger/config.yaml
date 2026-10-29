@@ -1,6 +1,6 @@
 # Jaeger v2 (OpenTelemetry Collector based): OTLP in (4317 gRPC from Mule workers, 4318 HTTP via APISIX /otlp),
 # spans stored in OpenSearch, UI/API on 16686 under /jaeger (APISIX route, admin SSO).
-# Indices keep the v1 names (jaeger-span-YYYY-MM-DD, jaeger-service-...): no prefix, so the ISM retention policy and
+# Indices keep the v1 names (jaeger-span-YYYY-MM-DD, jaeger-service-...): no prefix, so the log-archiver retention and
 # older traces still match.
 service:
   extensions: [jaeger_storage, jaeger_query, healthcheckv2]
