@@ -85,6 +85,8 @@ OPS_PW=${GATEWAY_OPS_PASSWORD:-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d '
 # single sign-on: Keycloak gateway-sso client secret and the session cookie key (random = sign-in lost on restart)
 SSO_SECRET=${GATEWAY_SSO_CLIENT_SECRET:-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')}
 SESSION_SECRET=${GATEWAY_SESSION_SECRET:-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')}
+# /log-archiver proves the gateway to the archiver; unset -> a random one, so the archiver stays closed rather than open
+LA_KEY=${LOG_ARCHIVER_TOKEN:-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')}
 # /activemq signs in to the ActiveMQ console as admin
 AMQ_BASIC=$(printf 'admin:%s' "${ACTIVEMQ_ADMIN_PASSWORD:-}" | base64 -w0)
 
@@ -93,7 +95,7 @@ render() {
     {
         grep -v '^#END' "$SRC" | auth_filter | sed -e "s|\${OTLP_INGEST_TOKEN}|$OTLP_KEY|g" -e "s|\${MULE_GATEWAY_CLIENT_SECRET}|$GW_SECRET|g" -e "s|\${GATEWAY_OPS_PASSWORD}|$OPS_PW|g" \
             -e "s|\${GATEWAY_SSO_CLIENT_SECRET}|$SSO_SECRET|g" -e "s|\${GATEWAY_SESSION_SECRET}|$SESSION_SECRET|g" \
-            -e "s|\${ACTIVEMQ_BASIC_AUTH}|$AMQ_BASIC|g"
+            -e "s|\${ACTIVEMQ_BASIC_AUTH}|$AMQ_BASIC|g" -e "s|\${LOG_ARCHIVER_TOKEN}|$LA_KEY|g"
         if [ -f "$CERT" ] && [ -f "$KEY" ]; then
             echo 'ssls:'
             echo '  - id: "default"'

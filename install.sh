@@ -20,6 +20,8 @@ docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required ('d
 if [ ! -f .env ]; then
     say "Creating .env from .env.example with generated secrets"
     bash config/scripts/setup/generate-secrets.sh >/dev/null
+else  # secrets added to .env.example since this .env was made (e.g. LOG_ARCHIVER_TOKEN)
+    bash config/scripts/setup/generate-secrets.sh --add-missing
 fi
 env_get() { sed -n "s/^$1=//p" .env | tail -n 1 | tr -d '\r'; }
 [ -n "$(env_get RM_PASSWORD)" ] && [ "$(env_get RM_PASSWORD)" != CHANGE_ME_PLEASE ] \
@@ -94,7 +96,10 @@ has opensearch-dashboards && echo "  Dashboards        https://localhost:9443/da
 has jaeger && echo "  Jaeger            https://localhost:9443/jaeger/$ops"
 has grafana && echo "  Grafana           https://localhost:9443/grafana/"
 has prometheus && echo "  Prometheus        https://localhost:9443/prometheus/$ops"
-has keycloak && echo "  Keycloak admin    https://localhost:9443/auth/admin/   (KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD)"
+has log-archiver && echo "  Log archiver      https://localhost:9443/log-archiver/   (retention, archiving, S3)$ops"
+# the master realm (server admin) is on 9080 only: 9443 answers 404 for it
+has keycloak && echo "  Keycloak realm    https://localhost:9443/auth/admin/mule/console/   (realm user admin)"
+has keycloak && echo "  Keycloak server   http://localhost:9080/auth/admin/master/console/   (KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD)"
 echo
 echo "  HTTPS uses a local CA: trust certs/ca/ca.crt in your OS/browser to drop the warning (curl --cacert certs/ca/ca.crt; on Windows add --ssl-no-revoke)."
 echo "  Stop: docker compose down     Start again: docker compose up -d (or ./install.sh)"

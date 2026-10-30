@@ -30,7 +30,7 @@ For an overview, see [README.md](README.md). The full reference is [CLAUDE.md](C
 | [Multi-tenancy demo](DEMO_MULTITENANCY.md) | step-by-step DLS demo with two tenants |
 | [Artifactory](docs/ARTIFACTORY_DEPLOYMENT.md) | publishing Mule apps, how the Runtime Manager fetches them |
 | [Backup](docs/BACKUP_SETUP.md) | OpenSearch snapshots |
-| [Retention](docs/RETENTION_POLICY_GUIDE.md) | log-archiver: 1 year or disk limit, gzip archive, optional S3 |
+| [Retention](docs/RETENTION_POLICY_GUIDE.md) | log archiver UI: rules by time/disk, per app, archive filters, disk/S3 destinations |
 | [Monitoring](docs/MONITORING_SETUP.md) | Prometheus, Grafana, Alertmanager |
 | [Offline images](docs/DOCKER_IMAGES_EXPORT.md) | export/import Docker images |
 | [Mule platform](mule/README.md) | runtime pools, Runtime Manager API |

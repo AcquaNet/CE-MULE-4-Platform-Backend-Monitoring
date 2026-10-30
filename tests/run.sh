@@ -39,8 +39,10 @@ run() {  # name, command...
 unit() {
   run unit-runtime-manager "$SYS_PY" mule/runtime-manager/test_app.py
   run unit-node-agent "$SYS_PY" node/agent/test_agent.py
-  run unit-log-archiver "$SYS_PY" config/log-archiver/test_archiver.py
+  run unit-log-archiver "$SYS_PY" log-archiver/test_archiver.py
+  run unit-generate-secrets bash config/scripts/setup/test_generate_secrets.sh
   run unit-apisix-home-link "$SYS_PY" config/apisix/test_home_link.py
+  run unit-apisix-untraced "$SYS_PY" config/apisix/test_untraced.py
   run unit-grafana-dashboards "$SYS_PY" config/grafana/test_dashboards.py
   if command -v mvn >/dev/null; then run unit-otel-agent mvn -q -f otel-mule4-agent/pom.xml test; else echo "SKIP unit-otel-agent: no mvn"; fi
   run unit-compose bash -c 'docker compose --profile "*" config -q && for p in db mq logging tracing monitoring alerting opensearch-monitoring auth; do docker compose --profile "$p" config -q || exit 1; done && echo "compose files valid"'

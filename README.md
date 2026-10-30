@@ -93,6 +93,7 @@ All web UIs go through the gateway at `https://localhost:9443` (from other machi
 | `/` | Home page: links to every tool | Keycloak sign-in (realm `mule`), once for every tool; `/logout` signs out |
 | `/runtime-manager/` | Runtime Manager UI/API | Keycloak sign-in (realm role `admin`); scripts: `RM_USER`/`RM_PASSWORD` or an API token |
 | `/api/*`, per-app paths | Mule apps | Bearer token issued to client `mule-api-gateway` with client role `api-access` |
+| `/log-archiver/` | Log archiver: retention, archiving, S3 | Keycloak sign-in, realm role `admin` |
 | `/dashboards/` | OpenSearch Dashboards | Keycloak sign-in: realm role `admin` sees all logs, other users only their tenant's |
 | `/opensearch/` | OpenSearch REST API, on `http://localhost:9080` only (404 on 9443) | `admin` / `OPENSEARCH_ADMIN_PASSWORD`, or a tenant user |
 | `/jaeger/` | Jaeger UI/API | Keycloak sign-in, realm role `admin`; scripts: bearer token of an admin user |
@@ -145,9 +146,12 @@ and `jaeger-span-*` are created in the Global tenant on every Dashboards start w
 
 ## Retention
 
-The `log-archiver` service keeps logs 365 days, or less when OpenSearch's disk passes 80%, and saves every deleted
-log index to `volumes/log-archive/<index>.ndjson.gz` first (optionally to S3). Traces: 30 days. See
-[docs/RETENTION_POLICY_GUIDE.md](docs/RETENTION_POLICY_GUIDE.md).
+The **log archiver** (home page card, `/log-archiver/`) is the only thing that deletes logs and traces. In its UI:
+global rules (keep 365 days, or less when OpenSearch's disk passes 80% or a max log size; traces 7 days; gateway health checks are not traced), per-app
+retention and max size, separate limits for the archive files on disk (total GB, that disk's %),
+destinations and archive filters (which logs get archived), and destinations: disk folders (own retention and size
+limit) or S3 folders (raw, gzip or zip; several folders per S3 connection, or one connection each). Logs are archived
+before they're deleted. See [docs/RETENTION_POLICY_GUIDE.md](docs/RETENTION_POLICY_GUIDE.md).
 
 ## Troubleshooting
 

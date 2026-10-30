@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Archiver</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a78d6'/%3E%3Cpath d='M3.5 5h9v7.5h-9zM3 3.5h10V5H3zM6.5 7.5h3' stroke='white' stroke-width='1.3' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --bg:#f4f5f7; --surface:#fcfcfb; --raised:#ffffff; --line:#e2e4e8; --line-strong:#cfd3da;
+    --text:#0b0b0b; --text-2:#52514e; --muted:#77766f; --accent:#2a78d6; --accent-ink:#ffffff;
+    --good-ink:#006300; --critical-ink:#b42626;
+    --chip-good:#e8f6e8; --chip-warn:#fdf3dc; --chip-bad:#fbe9e9; --chip-neutral:#eef0f3;
+    --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --series-other:#a3a29b; --track:#ecedef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg:#121211; --surface:#1a1a19; --raised:#21211f; --line:#2e2e2b; --line-strong:#3c3c38;
+      --text:#f0efec; --text-2:#c3c2b7; --muted:#9a998f; --accent:#3987e5; --accent-ink:#ffffff;
+      --good-ink:#4cc24c; --critical-ink:#ef7a7a;
+      --chip-good:#16301a; --chip-warn:#352a10; --chip-bad:#3a1a1a; --chip-neutral:#2a2a27;
+      --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-other:#6b6a63; --track:#2a2a27;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#121211; --surface:#1a1a19; --raised:#21211f; --line:#2e2e2b; --line-strong:#3c3c38;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#9a998f; --accent:#3987e5; --accent-ink:#ffffff;
+    --good-ink:#4cc24c; --critical-ink:#ef7a7a;
+    --chip-good:#16301a; --chip-warn:#352a10; --chip-bad:#3a1a1a; --chip-neutral:#2a2a27;
+    --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-other:#6b6a63; --track:#2a2a27;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  a { color:var(--accent); }
+  button, input, select { font:inherit; color:inherit; }
+  .num { font-variant-numeric:tabular-nums; }
+  header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .brand { font-weight:600; font-size:15px; }
+  header .meta { color:var(--muted); font-size:13px; }
+  header .spacer { flex:1; }
+  main { max-width:1180px; margin:0 auto; padding:16px 20px 64px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; overflow-x:auto; }
+  .tab { padding:8px 14px; border:none; background:none; cursor:pointer; color:var(--text-2); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+  .tab[aria-selected="true"] { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; min-width:0; margin-bottom:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .card h3 small { font-weight:400; color:var(--muted); }
+  .grid { display:grid; gap:16px; }
+  .tiles { grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); margin-bottom:16px; }
+  .tile .label { color:var(--text-2); font-size:13px; }
+  .tile .value { font-size:26px; font-weight:600; margin-top:4px; }
+  .tile .hint { color:var(--muted); font-size:12px; margin-top:2px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:7px; border:1px solid var(--line-strong); background:var(--raised); cursor:pointer; white-space:nowrap; }
+  .btn:hover { border-color:var(--muted); }
+  .btn:disabled { opacity:.55; cursor:progress; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.danger { color:var(--critical-ink); }
+  .btn.small { padding:3px 9px; font-size:13px; }
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:1px 8px; border-radius:999px; font-size:12px; background:var(--chip-neutral); color:var(--text-2); white-space:nowrap; }
+  .badge.good { background:var(--chip-good); color:var(--good-ink); }
+  .badge.warn { background:var(--chip-warn); color:var(--text); }
+  .badge.bad { background:var(--chip-bad); color:var(--critical-ink); }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  td.r, th.r { text-align:right; }
+  tr:last-child td { border-bottom:none; }
+  .wrap { overflow-x:auto; }
+  .mono { font-family:ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:12.5px; }
+  .placeholder { color:var(--muted); padding:14px 4px; text-align:center; }
+  .help { color:var(--muted); font-size:12.5px; margin:4px 0 0; }
+  .form { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px 16px; }
+  label.f { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--text-2); }
+  input[type=text], input[type=number], input[type=password], select { padding:6px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--raised); min-width:0; width:100%; }
+  .checks { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  .checks label { display:inline-flex; gap:6px; align-items:center; font-size:13px; }
+  .rule { border:1px dashed var(--line-strong); border-radius:8px; padding:10px; margin:8px 0; }
+  .rule .or { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .cond { display:grid; grid-template-columns:150px 130px minmax(0,1fr) auto; gap:6px; margin:6px 0; align-items:center; }
+  @media (max-width:640px) { .cond { grid-template-columns:1fr 1fr; } .cond input { grid-column:1 / -1; } }
+  .savebar { position:sticky; bottom:0; background:var(--surface); border-top:1px solid var(--line); padding:10px 20px; display:flex; gap:12px; align-items:center; justify-content:flex-end; }
+  .savebar .msg { flex:1; color:var(--muted); font-size:13px; }
+  .savebar .msg.err { color:var(--critical-ink); }
+  .row-sel { cursor:pointer; } .row-sel:hover td { background:var(--bg); }
+  .row-sel[aria-current="true"] td { background:var(--raised); }
+  .apps { display:flex; flex-wrap:wrap; gap:4px; }
+  /* usage: part-to-whole bars (2px surface gap between segments, rounded outer ends), one-hue share bars */
+  .stack { position:relative; display:flex; gap:2px; height:22px; margin:10px 0 8px; }
+  .stack i { display:block; height:100%; min-width:0; }
+  .stack i:first-child { border-radius:4px 0 0 4px; } .stack i:last-child { border-radius:0 4px 4px 0; }
+  .stack .limit { position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--text); }
+  .keys { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:13px; color:var(--text-2); }
+  .keys span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; background:var(--c); }
+  .keys span.track::before { box-shadow:inset 0 0 0 1px var(--line-strong); }
+  .headline { font-size:24px; font-weight:600; }
+  .share { height:8px; border-radius:0 4px 4px 0; background:var(--series-1); min-width:2px; }
+  .cols { position:relative; } .cols svg { display:block; width:100%; height:auto; }
+  .cols .axis { fill:var(--muted); font-size:11px; } .cols .grid { stroke:var(--line); }
+  .tip { position:absolute; pointer-events:none; background:var(--raised); border:1px solid var(--line); border-radius:6px;
+    padding:6px 8px; font-size:12px; box-shadow:0 2px 6px rgba(0,0,0,.15); white-space:nowrap; }
+</style>
+</head>
+<body>
+<header><span class="brand">Log Archiver</span><span class="meta" id="meta"></span><span class="spacer"></span>
+  <button class="btn small" type="button" id="runBtn">Run now</button></header>
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="overview">Overview</button>
+    <button class="tab" role="tab" data-tab="usage">Usage</button>
+    <button class="tab" role="tab" data-tab="rules">Rules</button>
+    <button class="tab" role="tab" data-tab="apps">Apps</button>
+    <button class="tab" role="tab" data-tab="destinations">Destinations</button>
+  </nav>
+  <section id="body"><div class="placeholder">Loading…</div></section>
+</main>
+<div class="savebar" id="savebar" hidden><span class="msg" id="saveMsg">Unsaved changes</span>
+  <button class="btn" type="button" id="discardBtn">Discard</button><button class="btn primary" type="button" id="saveBtn">Save</button></div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (method, path, body) => {
+  const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+};
+const fmtBytes = v => v >= 1024 ** 3 ? `${(v / 1024 ** 3).toFixed(1)} GB` : v >= 1024 ** 2 ? `${(v / 1024 ** 2).toFixed(1)} MB` : `${Math.round((v || 0) / 1024)} KB`;
+const ago = t => { const s = Math.round(Date.now() / 1000 - t); return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+
+let tab = (location.hash.slice(1) || 'overview'), meta = null, cfg = null, saved = null, status = null, indices = null, apps = null, selApp = null;
+const dirty = () => JSON.stringify(cfg) !== JSON.stringify(saved);
+const changed = () => { $('#savebar').hidden = !dirty(); $('#saveMsg').textContent = 'Unsaved changes'; $('#saveMsg').className = 'msg'; };
+
+async function load() {
+  const c = await api('GET', 'api/config');
+  meta = c; cfg = c.config; saved = JSON.parse(JSON.stringify(cfg));
+  await refresh();
+}
+async function refresh() {
+  [status, indices, apps] = await Promise.all([api('GET', 'api/status'),
+    api('GET', 'api/indices').then(r => r.indices).catch(e => ({ error: e.message })),
+    api('GET', 'api/apps').then(r => r.apps).catch(() => [])]);
+  render();
+}
+
+function render() {
+  document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === tab));
+  const l = status.last;
+  $('#meta').textContent = status.running ? 'pass running…' : l ? `last pass ${ago(l.end)}${l.ok ? '' : ' (failed)'}` : 'first pass pending';
+  ({ overview, usage, rules, apps: appsTab, destinations })[tab]();
+}
+
+// ---------- overview ----------
+function overview() {
+  const l = status.last, acts = status.actions || [];
+  const count = k => acts.filter(a => a.kind === k).length;
+  const logs = Array.isArray(indices) ? indices.filter(i => i.kind === 'log') : [];
+  $('#body').innerHTML = `
+    <div class="grid tiles">
+      ${tile('Logs in OpenSearch', status.logs_bytes == null ? '—' : fmtBytes(status.logs_bytes),
+        `${cfg.logs.max_gb ? `limit ${cfg.logs.max_gb} GB · ` : ''}OpenSearch disk ${status.disk_percent == null ? '—' : status.disk_percent.toFixed(0) + '%'} (limit ${cfg.logs.disk_max_percent}%)`,
+        cfg.logs.max_gb && status.logs_bytes > cfg.logs.max_gb * 1024 ** 3)}
+      ${tile('Archives on disk', status.archive ? fmtBytes(status.archive.bytes) : '—',
+        status.archive ? `${status.archive.files} files${cfg.archive.max_gb ? ` · limit ${cfg.archive.max_gb} GB` : ''} · its disk ${status.archive.disk_percent.toFixed(0)}% used${cfg.archive.disk_max_percent ? ` (limit ${cfg.archive.disk_max_percent}%)` : ''}, ${fmtBytes(status.archive.free_bytes)} free` : 'after the first pass')}
+      ${tile('Last pass', l ? (l.ok ? 'OK' : 'Failed') : '—', l ? (l.ok ? ago(l.end) : l.error) : 'not run yet', l && !l.ok)}
+      ${tile('Log retention', `${cfg.logs.retention_days} d`, `${Object.keys(cfg.apps).length} app(s) with their own rules · traces ${cfg.traces.retention_days} d`)}
+      ${tile('Recent actions', `${count('archived')} / ${count('deleted')}`, 'archived / deleted (since start)')}
+    </div>
+    ${status.secrets ? '' : '<div class="card"><b>S3 is off:</b> set LOG_ARCHIVER_SECRETS_KEY in .env (./install.sh adds it) to store S3 secret keys.</div>'}
+    <div class="card"><h3>Log indices <small>per day; an app's logs go once older than its retention</small></h3>${Array.isArray(indices) ? (logs.length ? `<div class="wrap"><table>
+      <thead><tr><th>Index</th><th class="r">Age</th><th class="r">Logs</th><th class="r">Size</th><th>Apps (retention)</th></tr></thead><tbody>
+      ${logs.map(i => `<tr><td class="mono">${esc(i.index)}</td><td class="r num">${i.age_days} d</td><td class="r num">${i.docs}</td><td class="r num">${fmtBytes(i.bytes)}</td>
+        <td><div class="apps">${(i.apps || []).map(a => `<span class="badge ${a.due ? 'warn' : ''}" title="${a.docs} logs${a.due ? ': due, goes next pass' : ''}">${esc(a.app)} · ${a.retention_days} d</span>`).join('')}</div></td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="placeholder">No log indices.</div>') : `<div class="placeholder">OpenSearch unreachable: ${esc(indices.error)}</div>`}</div>
+    <div class="card"><h3>Activity <small>newest first</small></h3>${acts.length ? `<div class="wrap"><table><tbody>
+      ${acts.map(a => `<tr><td class="num" style="white-space:nowrap">${new Date(a.time * 1000).toLocaleString()}</td>
+        <td><span class="badge ${a.kind === 'error' ? 'bad' : a.kind === 'warning' ? 'warn' : a.kind === 'archived' ? 'good' : ''}">${esc(a.kind)}</span></td>
+        <td class="mono">${esc(a.detail)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="placeholder">Nothing archived or deleted since the service started.</div>'}</div>`;
+}
+const tile = (label, value, hint, bad) => `<div class="card tile" style="margin:0"><div class="label">${esc(label)}</div>
+  <div class="value num" ${bad ? 'style="color:var(--critical-ink)"' : ''}>${esc(value)}</div><div class="hint">${esc(hint)}</div></div>`;
+
+// ---------- usage ----------
+let use = null;
+async function usage() {
+  if (!use) $('#body').innerHTML = '<div class="placeholder">Loading usage…</div>';
+  try { use = await api('GET', 'api/usage'); } catch (e) { $('#body').innerHTML = `<div class="card placeholder">Usage unavailable: ${esc(e.message)}</div>`; return; }
+  if (tab !== 'usage') return;
+  const o = use.opensearch, ar = use.archive;
+  const days = n => n == null ? 'no growth yet' : n === 0 ? 'limit reached' : n < 1 ? 'under a day'
+    : n > 3650 ? 'more than 10 years' : n > 365 ? `~${(n / 365).toFixed(1)} years` : `~${Math.round(n)} days`;
+  const bar = (total, segs, limitPct) => `<div class="stack" role="img" aria-label="${esc(segs.map(x => `${x.label} ${fmtBytes(x.v)}`).join(', '))}">
+      ${segs.filter(x => x.v > 0).map(x => `<i style="flex:${x.v / total} 0 0;background:var(${x.c})" title="${esc(x.label)}: ${fmtBytes(x.v)} (${(100 * x.v / total).toFixed(1)}%)"></i>`).join('')}
+      ${limitPct ? `<span class="limit" style="left:${limitPct}%" title="limit ${limitPct}%"></span>` : ''}</div>
+    <div class="keys">${segs.map(x => `<span class="${x.c === '--track' ? 'track' : ''}" style="--c:var(${x.c})">${esc(x.label)} <b class="num">${fmtBytes(x.v)}</b></span>`).join('')}</div>`;
+  const osSegs = [{ label: 'Logs', v: o.parts.logs, c: '--series-1' }, { label: 'Traces', v: o.parts.traces, c: '--series-2' },
+    { label: "OpenSearch's own data", v: o.parts.opensearch, c: '--series-3' }, { label: 'Other files', v: o.parts.other, c: '--series-other' },
+    { label: 'Free', v: o.free, c: '--track' }];
+  const arSegs = [{ label: 'Archives', v: ar.archive_bytes, c: '--series-1' }, { label: 'Other files', v: ar.other, c: '--series-other' },
+    { label: 'Free', v: ar.free, c: '--track' }];
+  const maxApp = Math.max(1, ...use.apps.map(x => x.bytes)), logsTotal = Math.max(1, o.parts.logs);
+  const dataTotal = Math.max(1, o.parts.logs + o.parts.traces + o.parts.opensearch), shown = lastDays(use.days, 30);
+  $('#body').innerHTML = `
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))">
+      <div class="card"><h3>OpenSearch disk <small>logs and traces live here</small></h3>
+        <div class="headline num">${fmtBytes(o.free)} free <small class="help">of ${fmtBytes(o.total)} · ${(100 * o.used / o.total).toFixed(0)}% used</small></div>
+        ${bar(o.total, osSegs, o.limit_percent)}
+        <p class="help" style="margin-top:12px">OpenSearch's data only (${fmtBytes(dataTotal)}):</p>
+        ${bar(dataTotal, osSegs.slice(0, 3), 0)}
+        <p class="help">Line = disk limit ${o.limit_percent}% (oldest logs go above it): ${days(o.days_to_disk_limit)} at ${fmtBytes(o.growth_per_day)}/day (last 7 days).
+          ${o.max_log_gb ? `Max log size ${o.max_log_gb} GB: ${days(o.days_to_log_cap)} at ${fmtBytes(o.log_growth_per_day)}/day of logs.` : ''}</p></div>
+      <div class="card"><h3>Archive disk <small>./volumes/log-archive on this server</small></h3>
+        <div class="headline num">${fmtBytes(ar.free)} free <small class="help">of ${fmtBytes(ar.total)} · ${ar.percent.toFixed(0)}% used</small></div>
+        ${bar(ar.total, arSegs, ar.limit_percent)}
+        <p class="help">${ar.files} archive files${ar.max_gb ? ` · max archive size ${ar.max_gb} GB` : ''}${ar.limit_percent ? ` · line = archive disk limit ${ar.limit_percent}%` : ' · no archive disk limit'}.
+          "Other files" are everything else on that disk.</p></div>
+    </div>
+    <div class="card"><h3>Logs per app <small>size is an estimate: each app's share of a day's logs × that index's size</small></h3>${use.apps.length ? `<div class="wrap"><table>
+      <thead><tr><th>App</th><th class="r">Logs</th><th class="r">Days</th><th class="r">Size</th><th style="width:34%">Share of all logs</th></tr></thead><tbody>
+      ${use.apps.map(x => `<tr><td>${esc(x.app)}</td><td class="r num">${x.logs.toLocaleString()}</td><td class="r num">${x.days}</td><td class="r num">${fmtBytes(x.bytes)}</td>
+        <td><div style="display:flex;align-items:center;gap:8px"><div class="share" style="width:${Math.max(0.5, 100 * x.bytes / maxApp)}%"></div><span class="help num" style="margin:0">${x.bytes && 100 * x.bytes / logsTotal < 0.1 ? '<0.1' : (100 * x.bytes / logsTotal).toFixed(1)}%</span></div></td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="placeholder">No logs.</div>'}</div>
+    <div class="card"><h3>Per day <small>log and trace indices, last ${shown.length} days</small></h3>
+      <div class="keys" style="margin-bottom:6px"><span style="--c:var(--series-1)">Logs</span><span style="--c:var(--series-2)">Traces</span></div>
+      <div class="cols" id="dayChart"></div>
+      <details style="margin-top:8px"><summary class="help" style="cursor:pointer">Table</summary><div class="wrap"><table>
+        <thead><tr><th>Day</th><th class="r">Logs</th><th class="r">Log size</th><th class="r">Trace size</th></tr></thead><tbody>
+        ${use.days.slice().reverse().map(d => `<tr><td class="num">${d.day}</td><td class="r num">${d.log_count.toLocaleString()}</td><td class="r num">${fmtBytes(d.logs)}</td><td class="r num">${fmtBytes(d.traces)}</td></tr>`).join('')}
+      </tbody></table></div></details></div>
+    <div class="card"><h3>Destinations <small>on disk now, and everything sent since the archiver's data was created</small></h3><div class="wrap"><table>
+      <thead><tr><th>Destination</th><th>Type</th><th class="r">Files now</th><th class="r">Size now</th><th class="r">Sent (files)</th><th class="r">Sent (size)</th><th class="r">Logs sent</th></tr></thead><tbody>
+      ${use.targets.map(t => `<tr><td>${esc(t.name)}</td><td><span class="badge">${t.type === 'local' ? 'disk' : 'S3'} · ${esc(t.format)}</span></td>
+        <td class="r num">${t.on_disk ? t.on_disk.files : '—'}</td><td class="r num">${t.on_disk ? fmtBytes(t.on_disk.bytes) + (t.max_gb ? ` / ${t.max_gb} GB` : '') : '—'}</td>
+        <td class="r num">${t.sent.files}</td><td class="r num">${fmtBytes(t.sent.bytes)}</td><td class="r num">${t.sent.logs.toLocaleString()}</td></tr>`).join('')}
+      </tbody></table></div><p class="help">S3 shows what this archiver uploaded; the bucket itself isn't scanned.</p></div>`;
+  dayChart($('#dayChart'), shown);
+}
+
+// every calendar day up to today (days without an index are 0, not skipped), at most n
+function lastDays(rows, n) {
+  if (!rows.length) return [];
+  const by = Object.fromEntries(rows.map(r => [r.day, r])), out = [];
+  const end = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z'), first = new Date(rows[0].day + 'T00:00:00Z');
+  for (let d = new Date(Math.max(first, end - (n - 1) * 864e5)); d <= end; d = new Date(+d + 864e5)) {
+    const k = d.toISOString().slice(0, 10);
+    out.push(by[k] || { day: k, logs: 0, traces: 0, log_count: 0 });
+  }
+  return out;
+}
+
+function dayChart(el, rows) {
+  if (!rows.length) { el.innerHTML = '<div class="placeholder">No data.</div>'; return; }
+  const W = 900, H = 220, L = 56, R = 8, T = 8, B = 26, iw = W - L - R, ih = H - T - B;
+  const max = Math.max(1, ...rows.map(r => r.logs + r.traces)), y = v => T + ih - v / max * ih, bw = iw / rows.length;
+  let g = '';
+  for (let i = 0; i <= 4; i++) { const v = max * i / 4; g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis num" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmtBytes(v)}</text>`; }
+  const step = Math.ceil(rows.length / 8);
+  rows.forEach((r, i) => {
+    const w = Math.max(2, Math.min(48, bw * .7)), x = L + i * bw + (bw - w) / 2, hl = r.logs / max * ih, ht = r.traces / max * ih;
+    // logs at the baseline, traces on top with a 2px surface gap; the top end is rounded
+    g += `<rect x="${x}" y="${T + ih - hl}" width="${w}" height="${hl}" fill="var(--series-1)" rx="${ht ? 0 : 3}"/>`;
+    if (ht) g += `<rect x="${x}" y="${T + ih - hl - ht - (hl ? 2 : 0)}" width="${w}" height="${ht}" fill="var(--series-2)" rx="3"/>`;
+    if (i % step === 0) g += `<text class="axis" x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${r.day.slice(5)}</text>`;
+    g += `<rect data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${ih}" fill="transparent"/>`;  // hit target: the whole column
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Log and trace size per day">${g}</svg><div class="tip" hidden></div>`;
+  const tip = el.querySelector('.tip');
+  el.querySelector('svg').addEventListener('pointermove', e => {
+    const i = e.target.dataset && e.target.dataset.i; if (i == null) { tip.hidden = true; return; }
+    const r = rows[i], box = el.getBoundingClientRect();
+    tip.innerHTML = `<b>${r.day}</b><br>Logs ${fmtBytes(r.logs)} (${r.log_count.toLocaleString()})<br>Traces ${fmtBytes(r.traces)}`;
+    tip.hidden = false; tip.style.left = Math.min(box.width - 160, e.clientX - box.left + 12) + 'px'; tip.style.top = (e.clientY - box.top - 10) + 'px';
+  });
+  el.querySelector('svg').addEventListener('pointerleave', () => { tip.hidden = true; });
+}
+
+// ---------- shared editors ----------
+const targetNames = () => Object.keys(cfg.targets);
+function checks(list, key) {
+  return `<div class="checks">${targetNames().map(t => `<label><input type="checkbox" data-pick="${key}" value="${esc(t)}" ${list.includes(t) ? 'checked' : ''}>${esc(t)}
+    <span class="badge">${esc(cfg.targets[t].type)} · ${esc(cfg.targets[t].format)}</span></label>`).join('') || '<span class="help">No destinations yet: add one in Destinations.</span>'}</div>`;
+}
+function filtersEditor(rules, key) {
+  return `<div data-filters="${key}">${rules.length ? '' : '<p class="help">No rules: every log is archived.</p>'}
+    ${rules.map((r, i) => `${i ? '<div class="or">or</div>' : ''}<div class="rule">
+      ${r.conditions.map((c, j) => `<div class="cond">
+        <select data-c="${i}.${j}.field">${meta.fields.map(f => `<option ${f === c.field ? 'selected' : ''}>${f}</option>`).join('')}</select>
+        <select data-c="${i}.${j}.op">${meta.ops.map(o => `<option value="${o}" ${o === c.op ? 'selected' : ''}>${o.replace('_', ' ')}</option>`).join('')}</select>
+        <input type="text" data-c="${i}.${j}.value" value="${esc(c.value)}" placeholder="${c.op.startsWith('is') ? 'ERROR, WARN (any of)' : 'text'}">
+        <button class="btn small danger" type="button" data-delc="${i}.${j}" title="Remove condition">✕</button></div>`).join('')}
+      <button class="btn small" type="button" data-addc="${i}">+ and condition</button></div>`).join('')}
+    <button class="btn small" type="button" data-addr>+ rule (or)</button>
+    <p class="help">A log is archived when it matches <b>any</b> rule; inside a rule <b>every</b> condition must match.
+      Logs that match no rule are deleted at retention without an archive.</p></div>`;
+}
+function bindFilters(root, get) {
+  root.querySelectorAll('[data-filters]').forEach(box => {
+    const rules = () => get(box.dataset.filters);
+    box.addEventListener('input', e => { const k = e.target.dataset.c; if (!k) return; const [i, j, f] = k.split('.'); rules()[i].conditions[j][f] = e.target.value; changed(); });
+    box.addEventListener('change', e => { if (e.target.dataset.c) render(); });
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.addr !== undefined) rules().push({ conditions: [{ field: 'level', op: 'is', value: 'ERROR' }] });
+      else if (b.dataset.addc) rules()[b.dataset.addc].conditions.push({ field: 'level', op: 'is', value: '' });
+      else if (b.dataset.delc) { const [i, j] = b.dataset.delc.split('.'); rules()[i].conditions.splice(j, 1); if (!rules()[i].conditions.length) rules().splice(i, 1); }
+      else return;
+      changed(); render();
+    });
+  });
+}
+const num = (el, set) => el.addEventListener('input', () => { set(el.value === '' ? null : Number(el.value)); changed(); });
+
+// ---------- rules ----------
+function rules() {
+  $('#body').innerHTML = `
+    <div class="card"><h3>Global rules <small>every app without its own (Apps tab)</small></h3><div class="form">
+      <label class="f">Keep logs (days)<input type="number" min="1" id="rDays" value="${cfg.logs.retention_days}"></label>
+      <label class="f">Max log size (GB)<input type="number" min="0" step="0.1" id="rMax" value="${cfg.logs.max_gb || 0}">
+        <span class="help">all logs in OpenSearch together; above it the oldest day goes first, archived. 0 = no limit</span></label>
+      <label class="f">OpenSearch disk limit (%)<input type="number" min="50" max="94" id="rDisk" value="${cfg.logs.disk_max_percent}">
+        <span class="help">above it the oldest day goes first, archived as usual; OpenSearch stops writing at 95%</span></label>
+      <label class="f">Keep traces (days)<input type="number" min="1" id="rTraces" value="${cfg.traces.retention_days}"><span class="help">Jaeger indices, not archived</span></label>
+      <label class="f">Check every (seconds)<input type="number" min="60" id="rInt" value="${cfg.interval_seconds}"></label>
+    </div></div>
+    <div class="card"><h3>Archive space <small>archive files on this server's disk (all disk folders together)</small></h3><div class="form">
+      <label class="f">Max archive size (GB)<input type="number" min="0" step="0.1" id="aMax" value="${cfg.archive.max_gb || 0}">
+        <span class="help">0 = no limit; above it the oldest archive files go first (each folder also has its own limits)</span></label>
+      <label class="f">Archive disk limit (%)<input type="number" min="0" max="99" id="aPct" value="${cfg.archive.disk_max_percent || 0}">
+        <span class="help">of the disk holding ./volumes/log-archive (not OpenSearch's); 0 = off</span></label>
+    </div>${status.archive ? `<p class="help">Now: ${fmtBytes(status.archive.bytes)} in ${status.archive.files} files; that disk ${status.archive.disk_percent.toFixed(0)}% used, ${fmtBytes(status.archive.free_bytes)} free. S3 destinations don't count.</p>` : ''}</div>
+    <div class="card"><h3>Archive to <small>default destinations, before logs are deleted</small></h3>${checks(cfg.logs.targets, 'global')}
+      <p class="help">None checked: logs are deleted without an archive.</p></div>
+    <div class="card"><h3>Archive filters <small>default: which logs get archived</small></h3>${filtersEditor(cfg.logs.filters, 'global')}</div>`;
+  num($('#rDays'), v => cfg.logs.retention_days = v); num($('#rDisk'), v => cfg.logs.disk_max_percent = v);
+  num($('#rMax'), v => cfg.logs.max_gb = v || 0); num($('#aMax'), v => cfg.archive.max_gb = v || 0);
+  num($('#aPct'), v => cfg.archive.disk_max_percent = v || 0);
+  num($('#rTraces'), v => cfg.traces.retention_days = v); num($('#rInt'), v => cfg.interval_seconds = v);
+  bindPicks(k => cfg.logs.targets, v => cfg.logs.targets = v);
+  bindFilters($('#body'), () => cfg.logs.filters);
+}
+function bindPicks(get, set) {
+  $('#body').querySelectorAll('[data-pick]').forEach(cb => cb.addEventListener('change', () => {
+    set([...$('#body').querySelectorAll(`[data-pick="${cb.dataset.pick}"]:checked`)].map(x => x.value)); changed();
+  }));
+}
+
+// ---------- apps ----------
+function appsTab() {
+  const list = [...new Set([...apps.map(a => a.app), ...Object.keys(cfg.apps)])].sort();
+  const row = a => { const own = cfg.apps[a] || {}, info = apps.find(x => x.app === a);
+    const eff = k => own[k] != null ? own[k] : cfg.logs[k];
+    return `<tr class="row-sel" data-app="${esc(a)}" aria-current="${a === selApp}"><td>${esc(a)}</td><td class="r num">${info ? info.docs : 0}</td>
+      <td class="r num" title="estimate: the app's share of each day's logs x that index's size">${info ? fmtBytes(info.bytes) : '—'}${own.max_gb ? ` <span class="help">/ ${own.max_gb} GB</span>` : ''}</td>
+      <td>${own.retention_days != null ? `<b>${own.retention_days} d</b>` : `<span class="help">${cfg.logs.retention_days} d (global)</span>`}</td>
+      <td>${own.targets != null ? (own.targets.length ? own.targets.map(t => `<span class="badge">${esc(t)}</span>`).join(' ') : '<b>no archive</b>') : `<span class="help">${eff('targets').join(', ') || 'no archive'} (global)</span>`}</td>
+      <td>${own.filters != null ? `<b>${own.filters.length ? own.filters.length + ' rule(s)' : 'everything'}</b>` : `<span class="help">${cfg.logs.filters.length ? cfg.logs.filters.length + ' rule(s)' : 'everything'} (global)</span>`}</td></tr>`; };
+  $('#body').innerHTML = `<div class="card"><h3>Apps <small>from the logs; pick one to give it its own rules</small></h3>
+      ${list.length ? `<div class="wrap"><table><thead><tr><th>App</th><th class="r">Logs</th><th class="r">Size</th><th>Keep</th><th>Archive to</th><th>Archive filters</th></tr></thead>
+      <tbody>${list.map(row).join('')}</tbody></table></div>` : '<div class="placeholder">No logs yet.</div>'}
+      <p class="help"><b>(no application)</b> = logs without an application field (logstash-*): global rules.</p></div>
+    <div id="appEdit"></div>`;
+  $('#body').querySelectorAll('[data-app]').forEach(tr => tr.onclick = () => { selApp = tr.dataset.app; render(); });
+  if (selApp) appEdit(selApp);
+}
+function appEdit(a) {
+  const own = cfg.apps[a] || { retention_days: null, targets: null, filters: null, max_gb: null };
+  const set = (k, v) => { const o = cfg.apps[a] || (cfg.apps[a] = { retention_days: null, targets: null, filters: null, max_gb: null }); o[k] = v;
+    if (Object.values(o).every(x => x == null)) delete cfg.apps[a]; changed(); };
+  $('#appEdit').innerHTML = `<div class="card"><h3>${esc(a)} <small>empty / unchecked "own" = the global rule</small>
+      <button class="btn small" type="button" id="appReset" ${cfg.apps[a] ? '' : 'disabled'}>Use global rules</button></h3>
+    <div class="form"><label class="f">Keep logs (days)<input type="number" min="1" id="aDays" value="${own.retention_days ?? ''}" placeholder="${cfg.logs.retention_days} (global)"></label>
+      <label class="f">Max size (GB)<input type="number" min="0" step="0.1" id="aSize" value="${own.max_gb ?? ''}" placeholder="no limit">
+        <span class="help">this app's logs in OpenSearch; above it its oldest day goes first (archived), other apps' logs stay. Size per app is an estimate</span></label></div>
+    <h3 style="margin-top:16px">Archive to <label class="checks"><label><input type="checkbox" id="aOwnT" ${own.targets != null ? 'checked' : ''}>own destinations</label></label></h3>
+    ${own.targets != null ? checks(own.targets, 'app') + '<p class="help">None checked: this app is deleted without an archive.</p>' : `<p class="help">Global: ${esc(cfg.logs.targets.join(', ') || 'no archive')}</p>`}
+    <h3 style="margin-top:16px">Archive filters <label class="checks"><label><input type="checkbox" id="aOwnF" ${own.filters != null ? 'checked' : ''}>own filters</label></label></h3>
+    ${own.filters != null ? filtersEditor(own.filters, 'app') : `<p class="help">Global: ${cfg.logs.filters.length ? cfg.logs.filters.length + ' rule(s)' : 'every log'}</p>`}</div>`;
+  num($('#aDays'), v => set('retention_days', v));
+  num($('#aSize'), v => set('max_gb', v || null));
+  $('#aOwnT').onchange = e => { set('targets', e.target.checked ? [...cfg.logs.targets] : null); render(); };
+  $('#aOwnF').onchange = e => { set('filters', e.target.checked ? JSON.parse(JSON.stringify(cfg.logs.filters)) : null); render(); };
+  $('#appReset').onclick = () => { delete cfg.apps[a]; changed(); render(); };
+  bindPicks(null, v => set('targets', v));
+  bindFilters($('#appEdit'), () => cfg.apps[a].filters);
+}
+
+// ---------- destinations ----------
+function destinations() {
+  const usage = status.usage || {}, conns = Object.keys(cfg.connections);
+  const tcard = (n, t) => `<div class="card" data-t="${esc(n)}"><h3>${esc(n)} <span><span class="badge">${t.type === 'local' ? 'disk' : 'S3'}</span>
+      <button class="btn small danger" type="button" data-delt="${esc(n)}">Delete</button></span></h3><div class="form">
+    <label class="f">Format<select data-k="format">${meta.formats.map(f => `<option value="${f}" ${f === t.format ? 'selected' : ''}>${{ raw: 'raw (.ndjson)', gzip: 'gzip (.ndjson.gz)', zip: 'zip (.zip)' }[f]}</option>`).join('')}</select></label>
+    ${t.type === 's3' ? `<label class="f">Connection<select data-k="connection">${conns.map(c => `<option ${c === t.connection ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+      <label class="f">Folder in the bucket<input type="text" data-k="folder" value="${esc(t.folder)}" placeholder="logs/prod (empty = bucket root)"></label>`
+    : `<label class="f">Folder<input type="text" data-k="folder" value="${esc(t.folder)}"><span class="help">under ./volumes/log-archive/</span></label>
+      <label class="f">Keep files (days)<input type="number" min="0" data-k="retention_days" value="${t.retention_days}"><span class="help">0 = forever</span></label>
+      <label class="f">Max size (GB)<input type="number" min="0" step="0.1" data-k="max_gb" value="${t.max_gb}"><span class="help">0 = no limit; oldest files go first</span></label>`}
+    </div>${t.type === 'local' && usage[n] ? `<p class="help">Now: ${usage[n].files} files, ${fmtBytes(usage[n].bytes)}</p>` : ''}
+    <p class="help mono">${esc(t.type === 's3' ? `s3://${cfg.connections[t.connection]?.bucket || '?'}/` : './volumes/log-archive/')}${esc(t.folder ? t.folder + '/' : '')}&lt;index&gt;/&lt;app&gt;${{ raw: '.ndjson', gzip: '.ndjson.gz', zip: '.zip' }[t.format]}</p></div>`;
+  const ccard = (n, c) => `<div class="card" data-conn="${esc(n)}"><h3>${esc(n)} <span>
+      <button class="btn small" type="button" data-test="${esc(n)}" ${saved.connections[n] ? '' : 'disabled title="Save first"'}>Test</button>
+      <button class="btn small danger" type="button" data-delconn="${esc(n)}">Delete</button></span></h3><div class="form">
+    <label class="f">Bucket<input type="text" data-k="bucket" value="${esc(c.bucket)}"></label>
+    <label class="f">Region<input type="text" data-k="region" value="${esc(c.region)}"></label>
+    <label class="f">Endpoint<input type="text" data-k="endpoint" value="${esc(c.endpoint)}" placeholder="empty = AWS; MinIO: http://minio:9000"></label>
+    <label class="f">Access key<input type="text" data-k="access_key" value="${esc(c.access_key)}" autocomplete="off"></label>
+    <label class="f">Secret key<input type="password" data-k="secret_key" value="${esc(c.secret_key || '')}" autocomplete="new-password" placeholder="${c.secret_key_set ? 'stored (type to replace)' : 'required'}"></label>
+    </div><p class="help" data-result="${esc(n)}"></p></div>`;
+  $('#body').innerHTML = `
+    <div class="card"><h3>Destinations <small>where archived logs go; pick them in Rules / Apps</small>
+      <span><input type="text" id="newT" placeholder="name, e.g. s3-prod" style="width:170px">
+      <button class="btn small" type="button" data-addt="local">+ Disk folder</button>
+      <button class="btn small" type="button" data-addt="s3" ${conns.length ? '' : 'disabled title="Add an S3 connection first"'}>+ S3 folder</button></span></h3>
+      <p class="help">Several S3 destinations can share a connection (same bucket, different folders) or each use their own.</p></div>
+    ${Object.entries(cfg.targets).map(([n, t]) => tcard(n, t)).join('')}
+    <div class="card"><h3>S3 connections <small>bucket + credentials; secret keys are stored encrypted and never shown</small>
+      <span><input type="text" id="newC" placeholder="name, e.g. aws-main" style="width:170px"><button class="btn small" type="button" id="addC">+ Connection</button></span></h3></div>
+    ${Object.entries(cfg.connections).map(([n, c]) => ccard(n, c)).join('')}`;
+  const nameOk = v => /^[a-z0-9][a-z0-9-]{0,39}$/.test(v);
+  $('#body').querySelectorAll('[data-addt]').forEach(b => b.onclick = () => {
+    const n = $('#newT').value.trim(); if (!nameOk(n) || cfg.targets[n]) return alert('Name: lowercase letters, digits, dashes, not in use');
+    cfg.targets[n] = b.dataset.addt === 'local' ? { type: 'local', folder: n, format: 'zip', retention_days: 0, max_gb: 0 }
+      : { type: 's3', connection: conns[0], folder: '', format: 'gzip' };
+    changed(); render(); });
+  $('#addC').onclick = () => { const n = $('#newC').value.trim(); if (!nameOk(n) || cfg.connections[n]) return alert('Name: lowercase letters, digits, dashes, not in use');
+    cfg.connections[n] = { bucket: '', region: 'us-east-1', endpoint: '', access_key: '', secret_key: '' }; changed(); render(); };
+  const field = (obj, el) => { const k = el.dataset.k; obj[k] = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value; changed(); };
+  $('#body').querySelectorAll('[data-t]').forEach(card => card.querySelectorAll('[data-k]').forEach(el =>
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { field(cfg.targets[card.dataset.t], el); if (el.tagName === 'SELECT') render(); })));
+  $('#body').querySelectorAll('[data-conn]').forEach(card => card.querySelectorAll('[data-k]').forEach(el =>
+    el.addEventListener('input', () => field(cfg.connections[card.dataset.conn], el))));
+  $('#body').querySelectorAll('[data-delt]').forEach(b => b.onclick = () => { const n = b.dataset.delt;
+    if (!confirm(`Delete destination ${n}? Files already archived stay where they are.`)) return;
+    delete cfg.targets[n]; cfg.logs.targets = cfg.logs.targets.filter(t => t !== n);
+    Object.values(cfg.apps).forEach(o => { if (o.targets) o.targets = o.targets.filter(t => t !== n); }); changed(); render(); });
+  $('#body').querySelectorAll('[data-delconn]').forEach(b => b.onclick = () => { const n = b.dataset.delconn;
+    if (Object.values(cfg.targets).some(t => t.connection === n)) return alert(`${n} is used by a destination: delete or move it first`);
+    delete cfg.connections[n]; changed(); render(); });
+  $('#body').querySelectorAll('[data-test]').forEach(b => b.onclick = async () => {
+    const out = $(`[data-result="${b.dataset.test}"]`); out.textContent = 'Testing…';
+    try { const r = await api('POST', `api/connections/${b.dataset.test}/test`); out.textContent = (r.ok ? '✓ ' : '✕ ') + r.detail; out.style.color = r.ok ? 'var(--good-ink)' : 'var(--critical-ink)'; }
+    catch (e) { out.textContent = '✕ ' + e.message; out.style.color = 'var(--critical-ink)'; } });
+}
+
+// ---------- save / tabs / refresh ----------
+$('#saveBtn').onclick = async () => {
+  const btn = $('#saveBtn'); btn.disabled = true;
+  try {
+    const r = await api('PUT', 'api/config', cfg);
+    cfg = r.config; saved = JSON.parse(JSON.stringify(cfg)); $('#savebar').hidden = true; await refresh();
+  } catch (e) { $('#saveMsg').textContent = 'Not saved: ' + e.message; $('#saveMsg').className = 'msg err'; }
+  btn.disabled = false;
+};
+$('#discardBtn').onclick = () => { cfg = JSON.parse(JSON.stringify(saved)); $('#savebar').hidden = true; render(); };
+$('#runBtn').onclick = async () => { await api('POST', 'api/run'); $('#meta').textContent = 'pass queued…'; setTimeout(refresh, 3000); };
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { tab = t.dataset.tab; location.hash = tab; render(); });
+window.addEventListener('beforeunload', e => { if (cfg && dirty()) e.preventDefault(); });
+setInterval(() => { if (!document.hidden && !dirty() && tab === 'overview') refresh().catch(() => {}); }, 30000);
+load().catch(e => { $('#body').innerHTML = `<div class="card placeholder">Could not load: ${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

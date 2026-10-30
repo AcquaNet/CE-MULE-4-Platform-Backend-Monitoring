@@ -6,6 +6,8 @@ Tracing agent for Mule 4 apps: sends traces to Jaeger (OpenSearch storage). Base
 
 - Automatic span creation for Mule flows
 - Span creation for each processor (Logger, Set Payload, HTTP Request, etc.)
+- Requests with the `X-Untraced` header aren't traced (the platform gateway's health checks send it, ~99% of the
+  traced requests of an idle install; the gateway removes the header from client requests)
 - Correlation ID on every root span (attribute `correlationId`; search it in Jaeger's Tags field)
 - Trace context across apps: incoming `traceparent` is honoured, outgoing calls carry it via `TraceContext.headers`
 - Worker identification
@@ -22,7 +24,7 @@ Tracing agent for Mule 4 apps: sends traces to Jaeger (OpenSearch storage). Base
 ```bash
 cd otel-mule4-agent   # from the repo root
 mvn clean install -DskipTests
-# installs io.opentelemetry.mule4:otel-mule4-agent:0.4.0 into ~/.m2
+# installs io.opentelemetry.mule4:otel-mule4-agent:0.4.1 into ~/.m2
 ```
 
 #### Add to the Mule application
@@ -31,7 +33,7 @@ mvn clean install -DskipTests
 <dependency>
   <groupId>io.opentelemetry.mule4</groupId>
   <artifactId>otel-mule4-agent</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
 </dependency>
 ```
 

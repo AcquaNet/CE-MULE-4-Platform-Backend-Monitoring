@@ -266,19 +266,24 @@ try:
 
     # ------------------------------------------------------------------------------------------------------------
     section('Gateway routes')
-    # "Home" link (global rule home-link): on tool pages, not on the home page, API answers or compressed assets
+    # "Home" link (global rule home-link inserts <script src="/home-link.js">): on tool pages, not on the home page or
+    # API answers; the script itself is public
     page = {'Accept': 'text/html', 'Accept-Encoding': 'gzip'}
+    tag = '<script src="/home-link.js"></script>'
+    r = get('/home-link.js')
+    check('/home-link.js: public script with the link', r.status == 200 and 'javascript' in (r.headers.get('Content-Type') or '')
+          and 'ce-home-link' in r.text, (r.status, r.headers.get('Content-Type')))
     r = get('/runtime-manager/', auth=RM_AUTH, headers=page, follow=True)
-    check('Runtime Manager page has the Home link', r.status == 200 and 'id="ce-home-link"' in r.text, r.status)
+    check('Runtime Manager page loads the Home link script', r.status == 200 and tag in r.text, r.status)
     check('Home link page served uncompressed', r.headers.get('Content-Encoding') in (None, ''), r.headers.get('Content-Encoding'))
     r = get('/runtime-manager/api/openapi.json', headers=page)
-    check('JSON answer has no Home link', 'ce-home-link' not in r.text, r.status)
+    check('JSON answer has no Home link', 'home-link.js' not in r.text, r.status)
     if AUTH_ON and need('auth') and need('tracing'):
         r = get('/jaeger/', token=ADMIN_T, headers=page)
-        check('Jaeger page has the Home link (SSO route, X-Frame-Options kept)',
-              'id="ce-home-link"' in r.text and r.headers.get('X-Frame-Options') == 'DENY', r.status)
+        check('Jaeger page loads the Home link script (SSO route, X-Frame-Options kept)',
+              tag in r.text and r.headers.get('X-Frame-Options') == 'DENY', r.status)
         r = get('/', token=ADMIN_T, headers=page)
-        check('home page itself has no Home link', 'ce-home-link' not in r.text, r.status)
+        check('home page itself has no Home link', 'home-link.js' not in r.text, r.status)
     forged = base64.b64encode(json.dumps({'azp': 'gateway-sso', 'roles': ['admin']}).encode()).decode()
     GARBAGE = 'abc.def.ghi'
     if AUTH_ON and need('auth'):
@@ -796,9 +801,26 @@ try:
                 got = r.json().get('_source', {}).get('index-pattern', {}).get('title') if r.status == 200 else None
                 check(f'Dashboards index pattern {title} in the Global tenant', got == title,
                       (r.status, sh(['docker', 'logs', '--tail', '20', 'opensearch-dashboards'])[1][-300:] if got != title else ''))
+        # log-archiver: sole owner of deletion (no ISM policies), reachable only through the gateway
         c, o = run('docker logs log-archiver', 30)
-        check('log-archiver started with the .env retention', f"logs {ENV.get('LOGS_RETENTION_DAYS', '365')} days" in o, o[-300:])
-        check('log-archiver: no ERROR', 'ERROR' not in o, [l for l in o.splitlines() if 'ERROR' in l][-3:])
+        check('log-archiver started', 'log-archiver on :8080' in o, o[-300:])
+        check('log-archiver: no error actions', ' error ' not in o and 'Traceback' not in o,
+              [l for l in o.splitlines() if ' error ' in l or 'Error' in l][-3:])
+        for p in ['mule-logs-retention', 'logstash-retention', 'jaeger-retention']:
+            check(f'no ISM policy {p} (the log-archiver deletes)', os_api('GET', f'_plugins/_ism/policies/{p}').status == 404)
+        c, o = sh(['docker', 'exec', 'log-archiver', 'python', '-c', "import http.client as h; c = h.HTTPConnection('localhost', 8080); "
+                   "c.request('GET', '/api/config'); print(c.getresponse().status)"])
+        check('log-archiver API without the gateway key -> 401', o.strip() == '401', o.strip())
+        if AUTH_ON and need('auth'):
+            r = get('/log-archiver/api/config', token=ADMIN_T)
+            cf = r.json().get('config', {}) if r.status == 200 else {}
+            check('/log-archiver/api/config as admin -> 200 (gateway key passed)', r.status == 200 and 'logs' in cf, (r.status, r.text[:150]))
+            check('log-archiver config: no secret key in the API', 'secret_key_enc' not in r.text, 'secret')
+            check('/log-archiver as developer -> 403', get('/log-archiver/api/config', token=DEV_T).status == 403)
+            r = http('GET', '/log-archiver/api/config', headers={'X-Gateway-Key': 'forged'})
+            check('/log-archiver without sign-in (forged key header) -> not 200', r.status != 200, r.status)
+            r = get('/log-archiver/api/indices', token=ADMIN_T)
+            check("/log-archiver/api/indices lists today's mule-logs", r.status == 200 and any(i['age_days'] == 0 for i in r.json()['indices']), r.status)
         for u, pw in [('admin', 'admin'), ('kibanaserver', 'kibanaserver'), ('readall', 'readall'), ('logstash', 'logstash'),
                       ('kibanaro', 'kibanaro'), ('snapshotrestore', 'snapshotrestore'), ('anomalyadmin', 'anomalyadmin')]:
             check(f'demo user {u}/{pw} -> 401', os_api('GET', '_cluster/health', auth=(u, pw)).status == 401)

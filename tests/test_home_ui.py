@@ -24,6 +24,7 @@ ERR_PAGE = re.compile(r'502 Bad Gateway|503 Service|504 Gateway|Internal Server 
 CARDS = {
     '/runtime-manager/': (None, True, r'Runtime pools|Applications'),
     '/dashboards/': ('logging', False, r'OpenSearch Dashboards|Home|Discover'),
+    '/log-archiver/': ('logging', True, r'Log Archiver|Log indices|Activity'),
     '/grafana/': ('monitoring', True, r'Welcome to Grafana|Dashboards|Home'),
     '/jaeger/': ('tracing', True, r'Find Traces|Search|Service'),
     '/prometheus/': ('monitoring', True, r'Prometheus|Execute|Query'),
@@ -88,7 +89,7 @@ def home_cards(page):
 
 def card_key(c):
     """The card's original link: an off card lost its href, so match by its title."""
-    titles = {'Runtime Manager': '/runtime-manager/', 'Logs': '/dashboards/', 'Metrics dashboards': '/grafana/',
+    titles = {'Runtime Manager': '/runtime-manager/', 'Logs': '/dashboards/', 'Log archiver': '/log-archiver/', 'Metrics dashboards': '/grafana/',
               'Traces': '/jaeger/', 'Metrics and alerts': '/prometheus/', 'Alert notifications': '/alertmanager/',
               'Message broker': '/activemq/admin/', 'API docs': '/runtime-manager/api/docs',
               'Users and tenants': '/auth/admin/mule/console/', 'My account': '/auth/realms/mule/account/'}
@@ -199,6 +200,57 @@ def tool_pages(page):
         ck(page, 'Dashboards home', wait_text(page, r'Home|OpenSearch Dashboards'), body_text(page)[:200])
     page.goto(GW + '/auth/admin/mule/console/#/mule/users')
     ck(page, 'Keycloak realm console: users list', wait_text(page, r'developer'), body_text(page)[:200])
+    if need('logging'):
+        log_archiver(page)
+    home_link(page)
+
+
+def log_archiver(page):
+    section('Log archiver page (admin)')
+    page.goto(GW + '/log-archiver/')
+    ck(page, 'Overview: disk, last pass, log indices', wait_text(page, r'OpenSearch disk') and wait_text(page, r'Log indices'),
+       body_text(page)[:200])
+    page.click('[data-tab="usage"]')
+    ck(page, 'Usage: both disks, per app, per day, destinations', wait_text(page, r'OpenSearch disk') and wait_text(page, r'Archive disk')
+       and wait_text(page, r'Logs per app') and page.locator('#dayChart svg rect[data-i]').count() >= 1, body_text(page)[:200])
+    page.hover('#dayChart svg rect[data-i]', force=True)
+    ck(page, 'Usage: day chart hover shows the day', page.locator('#dayChart .tip').is_visible())
+    page.click('[data-tab="rules"]')
+    ck(page, 'Rules: global rules and archive filters', wait_text(page, r'Global rules') and wait_text(page, r'Archive filters'),
+       body_text(page)[:200])
+    ck(page, 'Rules: log size and archive space limits apart', all(page.locator(s).count() == 1 for s in ('#rMax', '#rDisk', '#aMax', '#aPct')))
+    page.click('[data-addr]')  # + rule: an unsaved change shows the save bar; Discard puts it back
+    ck(page, 'editing shows the save bar', page.locator('#savebar').is_visible())
+    page.click('#discardBtn')
+    ck(page, 'Discard hides it again', not page.locator('#savebar').is_visible())
+    page.click('[data-tab="destinations"]')
+    ck(page, 'Destinations: the default disk folder and S3 connections', wait_text(page, r'S3 connections')
+       and page.locator('[data-t="local"]').count() == 1, body_text(page)[:200])
+    page.click('[data-tab="apps"]')
+    ck(page, 'Apps tab lists apps from the logs', wait_text(page, r'Archive filters'), body_text(page)[:200])
+
+
+def home_link(page):
+    """The gateway's "Home" link (home-link.js): visible on each tool once the app has rendered, and a click lands on the
+    platform home page, not the tool's own home (Grafana routes link clicks itself; Dashboards empties <body>)."""
+    section('Home link on the tool pages (admin)')
+    tools = [('Runtime Manager', '/runtime-manager/', True), ('Log archiver', '/log-archiver/', need('logging')),
+             ('Jaeger', '/jaeger/search', need('tracing')),
+             ('Grafana', '/grafana/dashboards', need('monitoring')), ('Prometheus', '/prometheus/query', need('monitoring')),
+             ('Dashboards', '/dashboards/app/home', need('logging')), ('Keycloak console', '/auth/admin/mule/console/', True)]
+    for name, path, on in tools:
+        if not on:
+            skip(f'Home link on {name}', 'profile off')
+            continue
+        page.goto(GW + path)
+        page.wait_for_load_state('networkidle', timeout=30000)
+        page.wait_for_timeout(1500)  # SPAs that rebuild the page after load (Dashboards)
+        link = page.locator('#ce-home-link')
+        ck(page, f'{name}: Home link visible', link.count() == 1 and link.is_visible(), link.count())
+        if link.count() == 1:
+            link.click()
+            page.wait_for_load_state('networkidle', timeout=20000)
+            ck(page, f'{name}: Home link opens the platform home page', page.url.rstrip('/?') == GW.rstrip('/'), page.url)
 
 
 def discover_tenant(page):

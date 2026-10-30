@@ -20,6 +20,8 @@ public class HttpTracingUtils {
 
 	// W3C Trace Context headers
 	public static final String TRACEPARENT_HEADER = "traceparent";
+	/** Requests carrying this header aren't traced (the gateway's health checks; it strips the header from clients). */
+	public static final String UNTRACED_HEADER = "x-untraced";
 	public static final String TRACESTATE_HEADER = "tracestate";
 
 	// Legacy Elastic APM header (for backwards compatibility)
@@ -91,6 +93,17 @@ public class HttpTracingUtils {
 		if (tenant != null && !tenant.isEmpty()) {
 			transaction.addLabel("tenant.id", tenant.toLowerCase());
 		}
+	}
+
+	/**
+	 * A request that must not be traced: HTTP with the X-Untraced header (any value).
+	 */
+	public static boolean isUntraced(PipelineMessageNotification notification) {
+		return isHttpEvent(notification) && isUntraced(getHttpHeaders(notification));
+	}
+
+	static boolean isUntraced(MultiMap<String, String> headers) {
+		return header(headers, UNTRACED_HEADER) != null;
 	}
 
 	/** Header value by name, ignoring case (the headers map keeps the sender's case unless the connector folds it). */

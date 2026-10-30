@@ -156,30 +156,29 @@ services:
       retries: 10
 
   #
-  # Retention: log indices are archived (gzip NDJSON in ./volumes/log-archive, optionally S3) and then deleted after
-  # LOGS_RETENTION_DAYS or when OpenSearch's disk passes LOGS_DISK_MAX_PERCENT; trace indices after JAEGER_RETENTION_DAYS.
-  # config/log-archiver/archiver.py, stdlib only (same base image as the Runtime Manager), ~15 MB.
+  # Log archiver: the only thing that deletes logs/traces in OpenSearch (no ISM). Rules (time, disk), per-app knobs,
+  # archive filters and destinations (disk folders, S3) are set in its UI at /log-archiver/ (admin SSO; the gateway
+  # sends X-Gateway-Key = LOG_ARCHIVER_TOKEN). Config/state in volume log-archiver-data, archives in ./volumes/log-archive.
+  # The LOGS_*/JAEGER_* values seed the config on the first start only.
   #
   log-archiver:
     profiles: [logging, tracing]
-    image: python:3.12-alpine
+    build: ./log-archiver
+    image: ce-log-archiver:1.0
     container_name: log-archiver
-    command: ["python", "-u", "/app/archiver.py"]
     environment:
       - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - LOG_ARCHIVER_TOKEN=${LOG_ARCHIVER_TOKEN:-}
+      - LOG_ARCHIVER_SECRETS_KEY=${LOG_ARCHIVER_SECRETS_KEY:-}
       - LOGS_RETENTION_DAYS=${LOGS_RETENTION_DAYS:-365}
-      - JAEGER_RETENTION_DAYS=${JAEGER_RETENTION_DAYS:-30}
       - LOGS_DISK_MAX_PERCENT=${LOGS_DISK_MAX_PERCENT:-80}
+      - JAEGER_RETENTION_DAYS=${JAEGER_RETENTION_DAYS:-7}
       - LOG_ARCHIVE_INTERVAL=${LOG_ARCHIVE_INTERVAL:-300}
-      - LOG_ARCHIVE_S3_BUCKET=${LOG_ARCHIVE_S3_BUCKET:-}
-      - LOG_ARCHIVE_S3_REGION=${LOG_ARCHIVE_S3_REGION:-}
-      - LOG_ARCHIVE_S3_ENDPOINT=${LOG_ARCHIVE_S3_ENDPOINT:-}
-      - LOG_ARCHIVE_S3_PREFIX=${LOG_ARCHIVE_S3_PREFIX:-}
-      - LOG_ARCHIVE_S3_ACCESS_KEY=${LOG_ARCHIVE_S3_ACCESS_KEY:-}
-      - LOG_ARCHIVE_S3_SECRET_KEY=${LOG_ARCHIVE_S3_SECRET_KEY:-}
     volumes:
-      - ./config/log-archiver/archiver.py:/app/archiver.py:ro
+      - log-archiver-data:/data
       - ./volumes/log-archive:/archive
+    expose:
+      - "8080"
     networks:
       - ce-base-micronet
       - ce-base-network   # S3
@@ -187,12 +186,12 @@ services:
       opensearch:
         condition: service_healthy
     restart: always
-    healthcheck:   # the loop touches the heartbeat each pass once OpenSearch answers
-      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/heartbeat') > 3 * int(os.environ['LOG_ARCHIVE_INTERVAL']) + 60)"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 30s
 
   #
   # Jaeger v2 - Distributed Tracing: OTLP from the OpenTelemetry Mule 4 agent, spans stored in OpenSearch.
@@ -240,6 +239,8 @@ services:
       - GATEWAY_AUTH=${GATEWAY_AUTH:-on}
       # key of the /otlp route (CloudHub traces); start.sh renders it into the route config
       - OTLP_INGEST_TOKEN=${OTLP_INGEST_TOKEN:-}
+      # header the /log-archiver route sends (the archiver only answers the gateway)
+      - LOG_ARCHIVER_TOKEN=${LOG_ARCHIVER_TOKEN:-}
       - MULE_GATEWAY_CLIENT_SECRET=${MULE_GATEWAY_CLIENT_SECRET}
       # single sign-on of the home page and /jaeger, /prometheus, /activemq (Keycloak client gateway-sso)
       - GATEWAY_SSO_CLIENT_SECRET=${GATEWAY_SSO_CLIENT_SECRET}
@@ -532,6 +533,7 @@ services:
     restart: always
 
 volumes:
+  log-archiver-data:
   opensearch-data:
     driver: local
   apisix-logs:

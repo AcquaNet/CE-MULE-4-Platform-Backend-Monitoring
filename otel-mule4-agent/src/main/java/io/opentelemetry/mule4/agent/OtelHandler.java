@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import io.opentelemetry.mule4.agent.exception.ExceptionUtils;
 import io.opentelemetry.mule4.agent.span.SpanUtils;
+import io.opentelemetry.mule4.agent.tracing.HttpTracingUtils;
 import io.opentelemetry.mule4.agent.transaction.OtelTransaction;
 import io.opentelemetry.mule4.agent.transaction.TransactionStore;
 import io.opentelemetry.mule4.agent.transaction.TransactionUtils;
@@ -62,7 +63,8 @@ public class OtelHandler {
 	public static void handleFlowStartEvent(PipelineMessageNotification notification) {
 		logger.debug("Handling flow start event");
 
-		if (TransactionUtils.isFirstEvent(transactionStore, notification)) {
+		// no transaction for untraced requests (health checks): their processor spans are skipped with it
+		if (TransactionUtils.isFirstEvent(transactionStore, notification) && !HttpTracingUtils.isUntraced(notification)) {
 			TransactionUtils.startTransaction(transactionStore, notification);
 		}
 	}

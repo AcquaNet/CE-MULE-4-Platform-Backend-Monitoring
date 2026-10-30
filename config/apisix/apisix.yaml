@@ -14,6 +14,65 @@ routes:
   # answers: 403 = not for this user (hidden), 5xx/404/no answer in 5 s = not running or profile off (greyed, no link).
   # Tools that sign users in themselves (data-admin) can't answer 403 to the probe: /sso/is-admin decides for them.
   #
+  #
+  # Log archiver UI/API: retention, archiving, S3 (admin SSO). The archiver only answers requests carrying the gateway's
+  # X-Gateway-Key (set here, replacing a client's own), so other containers on the network can't use its API.
+  #
+  - uri: /log-archiver
+    name: log-archiver-root
+    plugins:
+      redirect:
+        uri: /log-archiver/
+
+  - uri: /log-archiver/*
+    name: log-archiver
+    desc: "Log archiver UI and API (prefix stripped)"
+    upstream:
+      type: roundrobin
+      scheme: http
+      nodes:
+        "log-archiver:8080": 1
+      timeout:
+        connect: 10
+        send: 60
+        read: 120
+    plugin_config_id: "sso-admin"   # Keycloak sign-in, realm role admin
+    plugins:
+      proxy-rewrite:
+        regex_uri:
+          - "^/log-archiver/(.*)"
+          - "/$1"
+        headers:
+          set:
+            X-Gateway-Key: "${LOG_ARCHIVER_TOKEN}"
+
+  # the "Home" link the global rule home-link adds to tool pages (public: a static script, no data)
+  - uri: /home-link.js
+    name: home-link-js
+    methods: [GET]
+    plugins:
+      mocking:
+        # mocking accepts only json/xml/plain/html here; response_headers replaces it afterwards (a script needs a JS type)
+        content_type: "text/plain; charset=utf-8"
+        response_headers:
+          Content-Type: "application/javascript; charset=utf-8"
+        with_mock_header: false
+        response_example: |
+          (function () {
+            if (document.getElementById('ce-home-link')) return;
+            var a = document.createElement('a');
+            a.id = 'ce-home-link'; a.href = '/'; a.target = '_top'; a.title = 'Back to the home page';
+            a.textContent = '← Home';
+            a.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:6px 12px;border-radius:16px;' +
+              'background:#1f2937;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-decoration:none;' +
+              'box-shadow:0 2px 6px rgba(0,0,0,.3)';
+            // capture on window runs before any app's document listener: the browser follows the link itself
+            window.addEventListener('click', function (e) {
+              if (e.target && e.target.closest && e.target.closest('#ce-home-link')) e.stopImmediatePropagation();
+            }, true);
+            document.documentElement.appendChild(a);  // <html>, not <body>: survives an app emptying <body>
+          })();
+
   - uris: ["/", "/sso/callback"]
     name: home
     plugin_config_id: "sso"
@@ -41,6 +100,7 @@ routes:
           <main>
           <a class="card" data-admin href="/runtime-manager/"><b>Runtime Manager</b><span>Apps, runtime pools, deployments</span></a>
           <a class="card" href="/dashboards/"><b>Logs</b><span>OpenSearch Dashboards</span></a>
+          <a class="card" href="/log-archiver/"><b>Log archiver</b><span>Retention, archiving, S3</span></a>
           <a class="card" data-admin href="/grafana/"><b>Metrics dashboards</b><span>Grafana</span></a>
           <a class="card" href="/jaeger/"><b>Traces</b><span>Jaeger</span></a>
           <a class="card" href="/prometheus/"><b>Metrics and alerts</b><span>Prometheus</span></a>
@@ -349,7 +409,7 @@ routes:
       serverless-post-function:
         phase: access
         functions:
-          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token', 'X-Untraced'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
       limit-count:
         count: 100
         time_window: 60
@@ -408,7 +468,7 @@ routes:
       serverless-post-function:
         phase: access
         functions:
-          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token', 'X-Untraced'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
       limit-count:
         count: 100
         time_window: 60
@@ -672,25 +732,27 @@ routes:
 # (same auth + rate limit as /api/*). Generated routes live in the
 # "BEGIN runtime-manager" block at the top of routes: - don't edit that block by hand.
 #
-# "Home" link on every tool page (fixed, bottom left): third-party UIs can't be edited, so the gateway inserts it before
-# </body> of their HTML pages. Global rules run besides a route's own plugins (its response-rewrite headers stay).
-# Page loads only (Accept: text/html) go uncompressed, so the body can be rewritten; scripts/CSS keep gzip.
+# "Home" link on every tool page (fixed, bottom left): third-party UIs can't be edited, so the gateway inserts
+# <script src="/home-link.js"> before </body> of their HTML pages (same origin: allowed by their CSP 'self'). The script
+# puts the link on <html>, outside <body> (Dashboards empties <body> when it starts), and keeps SPA routers (Grafana
+# turns every link click into its own navigation) off its click. Global rules run besides a route's own plugins (its
+# response-rewrite headers stay). Page loads only (Accept: text/html) go uncompressed, so the body can be rewritten.
 global_rules:
   - id: home-link
     plugins:
       serverless-pre-function:
         phase: rewrite
         functions:
-          - "return function(conf, ctx) local core = require('apisix.core'); if ngx.re.find(ngx.var.uri, [[^/(runtime-manager|dashboards|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)]], 'jo') and (core.request.header(ctx, 'Accept') or ''):find('text/html', 1, true) then core.request.set_header(ctx, 'Accept-Encoding', nil) end end"
+          - "return function(conf, ctx) local core = require('apisix.core'); if ngx.re.find(ngx.var.uri, [[^/(runtime-manager|dashboards|log-archiver|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)]], 'jo') and (core.request.header(ctx, 'Accept') or ''):find('text/html', 1, true) then core.request.set_header(ctx, 'Accept-Encoding', nil) end end"
       response-rewrite:
         vars:
-          - ["uri", "~~", "^/(runtime-manager|dashboards|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)"]
+          - ["uri", "~~", "^/(runtime-manager|dashboards|log-archiver|jaeger|prometheus|grafana|alertmanager|activemq|auth/admin|auth/realms/[^/]+/account)(/|$)"]
           - ["upstream_http_content_type", "~~", "text/html"]
         filters:
           - regex: "</body>"
             scope: once
             options: "joi"
-            replace: "<a href=\"/\" id=\"ce-home-link\" title=\"Back to the home page\" style=\"position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:6px 12px;border-radius:16px;background:#1f2937;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 6px rgba(0,0,0,.3)\">&larr; Home</a></body>"
+            replace: "<script src=\"/home-link.js\"></script></body>"
 
 plugin_configs:
   # Gateway single sign-on (Keycloak client gateway-sso, one session cookie): "sso" = any signed-in user (home page),
@@ -802,7 +864,7 @@ plugin_configs:
       serverless-post-function:
         phase: access
         functions:
-          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
+          - "return function(conf, ctx) local core = require('apisix.core'); for _, h in ipairs({'X-Tenant-ID', 'X-ID-Token', 'X-Userinfo', 'X-Access-Token', 'X-Untraced'}) do core.request.set_header(ctx, h, nil) end; local p = (core.request.header(ctx, 'Authorization') or ''):match('^[Bb]earer%s+[^.]+%.([^.]+)%.'); if not p then return 401, {message = 'bearer token required'} end; p = p:gsub('-', '+'):gsub('_', '/'); local raw = ngx.decode_base64(p .. string.rep('=', (4 - #p % 4) % 4)); local claims = raw and core.json.decode(raw) or {}; local ra = type(claims.resource_access) == 'table' and claims.resource_access['mule-api-gateway']; local ok = false; if claims.azp == 'mule-api-gateway' and type(ra) == 'table' and type(ra.roles) == 'table' then for _, r in ipairs(ra.roles) do if r == 'api-access' then ok = true end end end; if not ok then return 403, {message = 'token must be issued to mule-api-gateway and carry its api-access role'} end; if type(claims.tenant_id) == 'string' then core.request.set_header(ctx, 'X-Tenant-ID', claims.tenant_id) end end"
       limit-count:
         count: 100
         time_window: 60
@@ -843,6 +905,9 @@ upstreams:
       active:
         type: http
         http_path: /api/v1/status
+        # not traced: the agent skips requests with X-Untraced (the /api routes strip it from clients)
+        req_headers:
+          - "X-Untraced: health-check"
         healthy:
           interval: 30
           http_statuses:

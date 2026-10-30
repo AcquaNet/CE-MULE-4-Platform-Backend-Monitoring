@@ -19,11 +19,11 @@ Jaeger's ports (16686, 4317, 4318) are not published.
 
 ## The agent
 
-Source: `otel-mule4-agent`. Version 0.4.0 (OpenTelemetry SDK 1.67.0).
+Source: `otel-mule4-agent`. Version 0.4.1 (OpenTelemetry SDK 1.67.0).
 
 ```bash
 cd otel-mule4-agent
-mvn clean install -DskipTests          # installs io.opentelemetry.mule4:otel-mule4-agent:0.4.0 into ~/.m2
+mvn clean install -DskipTests          # installs io.opentelemetry.mule4:otel-mule4-agent:0.4.1 into ~/.m2
 ```
 
 The app needs two things. First, the Maven dependency in `pom.xml`:
